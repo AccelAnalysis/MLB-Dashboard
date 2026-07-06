@@ -1,0 +1,771 @@
+import React, { useState, useMemo } from 'react';
+import {
+  LayoutDashboard,
+  ClipboardList,
+  Ruler,
+  AlertTriangle,
+  Presentation,
+  TrendingUp,
+  Plus,
+  X,
+  MapPin,
+  Calendar,
+  DollarSign,
+  User,
+  CheckCircle2,
+  Clock,
+  Printer,
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Wrench
+} from 'lucide-react';
+
+// --- HELPER FUNCTIONS ---
+const toISODate = (date) => date.toISOString().split('T')[0];
+const todayISO = () => toISODate(new Date());
+const daysAgo = (days) => toISODate(new Date(Date.now() - days * 86400000));
+const daysFromNow = (days) => toISODate(new Date(Date.now() + days * 86400000));
+
+const currency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value || 0);
+const formatDate = (dateStr) => {
+  if (!dateStr) return '-';
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${dateStr}T00:00:00`));
+};
+const daysBetween = (newerDate, olderDate) => {
+  if (!newerDate || !olderDate) return 0;
+  return Math.floor((new Date(`${newerDate}T00:00:00`) - new Date(`${olderDate}T00:00:00`)) / 86400000);
+};
+
+// --- MOCK DATA (New Hierarchical Structure) ---
+const initialProjects = [
+  {
+    id: 'P-1001',
+    customer: 'Smith Family',
+    city: 'Suffolk',
+    region: 'Virginia',
+    phone: '555-0101',
+    dateSold: daysAgo(15),
+    salesperson: 'Jack',
+    leadSource: 'Website',
+    paymentType: 'Finance',
+    originalAmount: 32000,
+    deposit: 16000,
+    changeOrders: [{ id: 1, date: daysAgo(5), description: 'Added 2 extra windows', amount: 1500 }],
+    intake: { contractReceived: true, uploadedJN: true, estimateApproved: true, budgetCreated: true, invoiceCreated: true, fileCreated: true },
+    permits: { required: true, type: 'Building', submittedDate: daysAgo(12), approvedDate: daysAgo(2), notes: '' },
+    notes: 'Dog in backyard. Finance approved through Greensky.',
+    decisionNeeded: '',
+    scopes: [
+      {
+        id: 'S-1001-A', type: 'Windows', measurer: 'Alonzo', measureRequested: daysAgo(14), measureCompleted: daysAgo(12),
+        materialListReceived: daysAgo(11), dateOrdered: daysAgo(10), vendor: 'ABC Supply', materialETA: daysFromNow(4), materialsIn: null,
+        crew: 'Team A', scheduledInstallDate: null, completionDate: null,
+        specs: { 'Window Style': 'Double Hung', 'Color': 'White', 'Grid': 'Yes', 'Quantity': '12' },
+        notes: 'Custom sizing on the bay window.'
+      },
+      {
+        id: 'S-1001-B', type: 'Siding', measurer: 'Alonzo', measureRequested: daysAgo(14), measureCompleted: daysAgo(12),
+        materialListReceived: null, dateOrdered: null, vendor: '', materialETA: null, materialsIn: null,
+        crew: '', scheduledInstallDate: null, completionDate: null,
+        specs: { 'Color': 'Slate Blue', 'Trim': 'White', 'House Wrap': 'Yes' },
+        notes: 'Waiting on material list from Alonzo to order.'
+      }
+    ]
+  },
+  {
+    id: 'P-1002',
+    customer: 'Jones Decking',
+    city: 'Chesapeake',
+    region: 'Virginia',
+    phone: '555-0202',
+    dateSold: daysAgo(4),
+    salesperson: 'Sarah',
+    leadSource: 'Referral',
+    paymentType: 'Cash',
+    originalAmount: 18500,
+    deposit: 9250,
+    changeOrders: [],
+    intake: { contractReceived: true, uploadedJN: true, estimateApproved: false, budgetCreated: false, invoiceCreated: false, fileCreated: false },
+    permits: { required: true, type: 'Zoning', submittedDate: null, approvedDate: null, notes: 'Need HOA approval first' },
+    notes: 'HOA paperwork submitted by homeowner.',
+    decisionNeeded: 'Jimmy needs to approve starter budget',
+    scopes: [
+      {
+        id: 'S-1002-A', type: 'Decks', measurer: 'Tito', measureRequested: daysAgo(3), measureCompleted: null,
+        materialListReceived: null, dateOrdered: null, vendor: '', materialETA: null, materialsIn: null,
+        crew: '', scheduledInstallDate: null, completionDate: null,
+        specs: { 'Material': 'Trex', 'Color': 'Spiced Rum', 'Railing': 'Black Metal' },
+        notes: 'Needs measurement ASAP.'
+      }
+    ]
+  },
+  {
+    id: 'P-1003',
+    customer: 'Davis Exterior',
+    city: 'Elizabeth City',
+    region: 'Carolina',
+    phone: '555-0303',
+    dateSold: daysAgo(45),
+    salesperson: 'Mike',
+    leadSource: 'Angi',
+    paymentType: 'Finance',
+    originalAmount: 25000,
+    deposit: 0,
+    changeOrders: [{ id: 1, date: daysAgo(30), description: 'Bad wood replacement', amount: 800 }],
+    intake: { contractReceived: true, uploadedJN: true, estimateApproved: true, budgetCreated: true, invoiceCreated: true, fileCreated: true },
+    permits: { required: false, type: '', submittedDate: null, approvedDate: null, notes: '' },
+    notes: 'Roof complete, waiting on gutters.',
+    decisionNeeded: '',
+    scopes: [
+      {
+        id: 'S-1003-A', type: 'Roofs', measurer: 'Mike', measureRequested: daysAgo(44), measureCompleted: daysAgo(42),
+        materialListReceived: daysAgo(42), dateOrdered: daysAgo(40), vendor: 'Beacon', materialETA: daysAgo(30), materialsIn: daysAgo(29),
+        crew: 'Team B', scheduledInstallDate: daysAgo(20), completionDate: daysAgo(18),
+        specs: { 'Shingle': 'Architectural', 'Color': 'Charcoal', 'Drip Edge': 'Black' },
+        notes: 'Completed.'
+      },
+      {
+        id: 'S-1003-B', type: 'Gutters', measurer: 'Mike', measureRequested: daysAgo(44), measureCompleted: daysAgo(42),
+        materialListReceived: daysAgo(42), dateOrdered: daysAgo(40), vendor: 'Local Supply', materialETA: daysAgo(10), materialsIn: daysAgo(8),
+        crew: '', scheduledInstallDate: null, completionDate: null,
+        specs: { 'Size': '6 inch', 'Color': 'White', 'Guards': 'Yes' },
+        notes: 'Materials are here, needs to be scheduled.'
+      }
+    ]
+  }
+];
+
+const PRODUCT_CATEGORIES = ['Roofs', 'Siding', 'Windows', 'Decks', 'Gutters', 'Doors', 'Trim', 'Repairs', 'Misc'];
+const VIEWS = { CENTER: 'center', MEASURE: 'measure', CRITICAL: 'critical', TV: 'tv', REPORTS: 'reports' };
+
+// --- LOGIC CALCULATIONS ---
+const getRevisedAmount = (project) => {
+  return project.originalAmount + (project.changeOrders?.reduce((sum, co) => sum + Number(co.amount), 0) || 0);
+};
+
+const getScopeStatus = (scope) => {
+  if (scope.completionDate) return { label: 'Completed', color: 'bg-gray-200 text-gray-800', stage: 7 };
+  if (scope.scheduledInstallDate) return { label: 'Scheduled', color: 'bg-pink-100 text-pink-700 border border-pink-200', stage: 6 };
+  if (scope.materialsIn) return { label: 'Materials In', color: 'bg-orange-100 text-orange-700 border border-orange-200', stage: 5 };
+  if (scope.materialETA) return { label: 'Material ETA', color: 'bg-blue-100 text-blue-700 border border-blue-200', stage: 4 };
+  if (scope.dateOrdered) return { label: 'Ordered', color: 'bg-teal-100 text-teal-700 border border-teal-200', stage: 3 };
+  if (scope.materialListReceived) return { label: 'List Rcvd / Ready to Order', color: 'bg-green-100 text-green-800 border border-green-200', stage: 2 };
+  if (scope.measureCompleted) return { label: 'Measured / Needs List', color: 'bg-indigo-100 text-indigo-700 border border-indigo-200', stage: 1 };
+  if (scope.measurer) return { label: 'Measure Assigned', color: 'bg-purple-100 text-purple-700 border border-purple-200', stage: 0 };
+  return { label: 'Needs Measurer', color: 'bg-red-50 text-red-700 border border-red-200', stage: -1 };
+};
+
+const calculateNextAction = (scope) => {
+  if (scope.completionDate) return "Close out / Collect";
+  if (scope.scheduledInstallDate) return "Execute Installation";
+  if (scope.materialsIn) return "Schedule Customer & Assign Crew";
+  if (scope.materialETA) return "Track Material Delivery";
+  if (scope.dateOrdered) return "Confirm Material ETA";
+  if (scope.materialListReceived) return "Order Materials";
+  if (scope.measureCompleted) return "Submit Material List";
+  if (scope.measurer) return "Complete Measurement";
+  return "Assign Measurer";
+};
+
+// --- COMPONENTS ---
+const Badge = ({ children, className = '' }) => (
+  <span className={`inline-flex items-center rounded-full px-2 py-1 text-[10px] sm:text-xs font-bold uppercase tracking-wide ${className}`}>
+    {children}
+  </span>
+);
+
+/* STREAMING_CHUNK:ProjectEditorModal */
+const ProjectModal = ({ project, onClose, onSave }) => {
+  const [formData, setFormData] = useState(project || {
+    id: `P-${Date.now().toString().slice(-4)}`, customer: '', city: '', region: 'Virginia', phone: '',
+    dateSold: todayISO(), salesperson: '', leadSource: '', paymentType: 'Finance',
+    originalAmount: '', deposit: '', changeOrders: [],
+    intake: { contractReceived: false, uploadedJN: false, estimateApproved: false, budgetCreated: false, invoiceCreated: false, fileCreated: false },
+    permits: { required: false, type: '', submittedDate: '', approvedDate: '', notes: '' },
+    notes: '', decisionNeeded: '', scopes: []
+  });
+  const [activeTab, setActiveTab] = useState('overview');
+  const [editingScope, setEditingScope] = useState(null);
+
+  const handleSave = () => { onSave(formData); };
+  
+  const updateField = (field, value) => { setFormData(prev => ({ ...prev, [field]: value })); };
+  const updateIntake = (field, value) => { setFormData(prev => ({ ...prev, intake: { ...prev.intake, [field]: value } })); };
+  const updatePermit = (field, value) => { setFormData(prev => ({ ...prev, permits: { ...prev.permits, [field]: value } })); };
+
+  const saveScope = (scopeData) => {
+    setFormData(prev => {
+      const exists = prev.scopes.find(s => s.id === scopeData.id);
+      if (exists) return { ...prev, scopes: prev.scopes.map(s => s.id === scopeData.id ? scopeData : s) };
+      return { ...prev, scopes: [...prev.scopes, { ...scopeData, id: `S-${Date.now().toString().slice(-4)}` }] };
+    });
+    setEditingScope(null);
+  };
+
+  const PrintView = () => (
+    <div className="p-8 bg-white text-black font-serif print:p-0 print:m-0" id="printable-area">
+      <div className="text-center border-b-2 border-black pb-4 mb-6">
+        <h1 className="text-3xl font-black uppercase tracking-widest">Major League Builders</h1>
+        <p className="text-lg">Project File: {formData.customer}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-8 mb-8">
+        <div>
+          <h3 className="font-bold border-b border-gray-300 mb-2">Customer Details</h3>
+          <p><strong>Name:</strong> {formData.customer}</p>
+          <p><strong>Location:</strong> {formData.city}, {formData.region}</p>
+          <p><strong>Phone:</strong> {formData.phone}</p>
+        </div>
+        <div>
+          <h3 className="font-bold border-b border-gray-300 mb-2">Contract Details</h3>
+          <p><strong>Date Sold:</strong> {formatDate(formData.dateSold)}</p>
+          <p><strong>Salesperson:</strong> {formData.salesperson}</p>
+          <p><strong>Original Total:</strong> {currency(formData.originalAmount)}</p>
+          <p><strong>Revised Total:</strong> {currency(getRevisedAmount(formData))}</p>
+        </div>
+      </div>
+      <h3 className="font-bold border-b border-gray-300 mb-4 text-xl">Work Scopes ({formData.scopes.length})</h3>
+      {formData.scopes.map((s, i) => (
+        <div key={i} className="mb-6 p-4 border border-gray-200 bg-gray-50">
+          <h4 className="font-bold text-lg mb-2">{s.type}</h4>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div><p><strong>Measurer:</strong> {s.measurer || 'TBD'}</p><p><strong>Crew:</strong> {s.crew || 'TBD'}</p></div>
+            <div><p><strong>Vendor:</strong> {s.vendor || 'TBD'}</p><p><strong>Status:</strong> {getScopeStatus(s).label}</p></div>
+          </div>
+          {s.specs && Object.keys(s.specs).length > 0 && (
+            <div className="mt-3 text-sm"><strong>Specs: </strong> 
+              {Object.entries(s.specs).map(([k,v]) => `${k}: ${v}`).join(' | ')}
+            </div>
+          )}
+        </div>
+      ))}
+      <div className="mt-8 border-t-2 border-black pt-4 text-sm">
+        <p><strong>Admin Notes:</strong> {formData.notes}</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+      <div className="flex max-h-[95vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
+          <div>
+            <h2 className="text-2xl font-black text-slate-800">{project ? `Project: ${formData.customer}` : 'New Customer Project'}</h2>
+            <p className="text-sm font-medium text-slate-500">ID: {formData.id} • {formData.city}</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => window.print()} className="rounded-lg bg-slate-200 p-2 text-slate-700 hover:bg-slate-300 hidden md:block"><Printer size={20} /></button>
+            <button onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-200"><X size={20} /></button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-slate-200 px-6 gap-6 bg-slate-50">
+          {[
+            { id: 'overview', label: 'Overview & Intake' },
+            { id: 'scopes', label: 'Work Scopes', badge: formData.scopes.length },
+            { id: 'financials', label: 'Financials & Changes' },
+            { id: 'print', label: 'Print View' }
+          ].map(t => (
+            <button key={t.id} onClick={() => setActiveTab(t.id)} className={`py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === t.id ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+              {t.label} {t.badge !== undefined && <span className="ml-1 bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full text-xs">{t.badge}</span>}
+            </button>
+          ))}
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
+          {activeTab === 'overview' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 space-y-6">
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                  <h3 className="font-bold text-slate-800 mb-4 flex items-center"><User size={18} className="mr-2 text-blue-500"/> Customer Details</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">Customer Name<input type="text" value={formData.customer} onChange={e => updateField('customer', e.target.value)} className="mt-1 w-full rounded-md border-slate-300 border p-2 text-sm text-slate-900" /></label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">City<input type="text" value={formData.city} onChange={e => updateField('city', e.target.value)} className="mt-1 w-full rounded-md border-slate-300 border p-2 text-sm text-slate-900" /></label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">Region
+                      <select value={formData.region} onChange={e => updateField('region', e.target.value)} className="mt-1 w-full rounded-md border-slate-300 border p-2 text-sm text-slate-900"><option>Virginia</option><option>Carolina</option></select>
+                    </label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">Phone<input type="text" value={formData.phone} onChange={e => updateField('phone', e.target.value)} className="mt-1 w-full rounded-md border-slate-300 border p-2 text-sm text-slate-900" /></label>
+                  </div>
+                </div>
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                  <h3 className="font-bold text-slate-800 mb-4 flex items-center"><FileText size={18} className="mr-2 text-blue-500"/> Administrative & Permits</h3>
+                  <div className="grid grid-cols-2 gap-4 mb-4 border-b border-slate-100 pb-4">
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">Salesperson<input type="text" value={formData.salesperson} onChange={e => updateField('salesperson', e.target.value)} className="mt-1 w-full rounded-md border-slate-300 border p-2 text-sm text-slate-900" /></label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">Date Sold<input type="date" value={formData.dateSold} onChange={e => updateField('dateSold', e.target.value)} className="mt-1 w-full rounded-md border-slate-300 border p-2 text-sm text-slate-900" /></label>
+                  </div>
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-bold text-slate-700">Permit Tracking</h4>
+                    <label className="flex items-center gap-2 text-sm font-medium text-slate-700"><input type="checkbox" checked={formData.permits.required} onChange={e => updatePermit('required', e.target.checked)} className="rounded border-slate-300 text-blue-600"/> Permit Required for Project</label>
+                    {formData.permits.required && (
+                      <div className="grid grid-cols-3 gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                        <label className="block text-xs font-bold text-slate-500 uppercase">Type<input type="text" value={formData.permits.type} onChange={e => updatePermit('type', e.target.value)} className="mt-1 w-full rounded border-slate-300 border p-1.5 text-sm" placeholder="e.g. Building"/></label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase">Submitted<input type="date" value={formData.permits.submittedDate} onChange={e => updatePermit('submittedDate', e.target.value)} className="mt-1 w-full rounded border-slate-300 border p-1.5 text-sm"/></label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase">Approved<input type="date" value={formData.permits.approvedDate} onChange={e => updatePermit('approvedDate', e.target.value)} className="mt-1 w-full rounded border-slate-300 border p-1.5 text-sm"/></label>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="bg-blue-50 p-5 rounded-xl border border-blue-100 shadow-sm">
+                  <h3 className="font-bold text-blue-900 mb-4 flex items-center"><CheckCircle2 size={18} className="mr-2 text-blue-600"/> Intake Checklist</h3>
+                  <p className="text-xs text-blue-700 mb-3 leading-relaxed">Ensure all pre-production administrative steps are completed before ordering materials.</p>
+                  <div className="space-y-2">
+                    {[
+                      { key: 'contractReceived', label: 'Contract Received' },
+                      { key: 'uploadedJN', label: 'Uploaded to JobNimbus' },
+                      { key: 'estimateApproved', label: 'Estimate Approved' },
+                      { key: 'budgetCreated', label: 'Starter Budget Created' },
+                      { key: 'invoiceCreated', label: 'Invoice Created' },
+                      { key: 'fileCreated', label: 'Physical Folder Created' },
+                    ].map(item => (
+                      <label key={item.key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-blue-100/50 cursor-pointer transition-colors text-sm font-medium text-slate-800">
+                        <input type="checkbox" checked={formData.intake[item.key]} onChange={e => updateIntake(item.key, e.target.checked)} className="h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500" />
+                        {item.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                  <h3 className="font-bold text-slate-800 mb-2">Critical Notes / Meeting Prep</h3>
+                  <textarea value={formData.decisionNeeded} onChange={e => updateField('decisionNeeded', e.target.value)} placeholder="e.g., Jimmy needs to review bad wood..." className="w-full rounded-md border border-slate-300 p-2 text-sm min-h-[80px]" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'scopes' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <div>
+                  <h3 className="font-bold text-slate-800 text-lg">Project Work Scopes</h3>
+                  <p className="text-sm text-slate-500">Break this project down by trade/product.</p>
+                </div>
+                <button onClick={() => setEditingScope({ type: 'Roofs', specs: {} })} className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-800 flex items-center">
+                  <Plus size={16} className="mr-2"/> Add Scope
+                </button>
+              </div>
+
+              {formData.scopes.length === 0 ? (
+                <div className="text-center py-12 bg-white rounded-xl border border-dashed border-slate-300 text-slate-400">
+                  <Wrench size={48} className="mx-auto mb-3 opacity-50" />
+                  <p>No work scopes added yet.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {formData.scopes.map(scope => {
+                    const status = getScopeStatus(scope);
+                    return (
+                      <div key={scope.id} className="bg-white rounded-xl border border-slate-200 shadow-sm hover:border-blue-400 transition-colors">
+                        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl">
+                          <h4 className="font-black text-slate-800 text-lg">{scope.type}</h4>
+                          <Badge className={status.color}>{status.label}</Badge>
+                        </div>
+                        <div className="p-4 grid grid-cols-2 gap-y-3 text-sm">
+                          <div><span className="text-slate-500 text-xs uppercase block font-bold">Measurer</span> {scope.measurer || 'TBD'}</div>
+                          <div><span className="text-slate-500 text-xs uppercase block font-bold">Sub / Crew</span> {scope.crew || 'TBD'}</div>
+                          <div><span className="text-slate-500 text-xs uppercase block font-bold">Material ETA</span> {formatDate(scope.materialETA)}</div>
+                          <div><span className="text-slate-500 text-xs uppercase block font-bold">Install Date</span> {formatDate(scope.scheduledInstallDate)}</div>
+                        </div>
+                        <div className="p-3 border-t border-slate-100 bg-slate-50/50 flex justify-between items-center rounded-b-xl">
+                          <span className="text-xs font-bold text-slate-500">Next: <span className="text-blue-600">{calculateNextAction(scope)}</span></span>
+                          <button onClick={() => setEditingScope(scope)} className="text-sm font-bold text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-1.5 rounded-lg">Edit Details</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'financials' && (
+            <div className="max-w-3xl space-y-6">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm text-center">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Original Contract</p>
+                  <p className="text-2xl font-black text-slate-800">{currency(formData.originalAmount)}</p>
+                </div>
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm text-center">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Net Changes</p>
+                  <p className="text-2xl font-black text-slate-800">{currency(getRevisedAmount(formData) - formData.originalAmount)}</p>
+                </div>
+                <div className="bg-blue-50 p-5 rounded-xl border border-blue-200 shadow-sm text-center">
+                  <p className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-1">Current Revised Total</p>
+                  <p className="text-2xl font-black text-blue-900">{currency(getRevisedAmount(formData))}</p>
+                </div>
+              </div>
+              
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                  <h3 className="font-bold text-slate-800">Change Orders Ledger</h3>
+                  <button className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-lg">+ Add C.O.</button>
+                </div>
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-xs font-bold">
+                    <tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Description</th><th className="px-4 py-3 text-right">Amount</th></tr>
+                  </thead>
+                  <tbody>
+                    {formData.changeOrders.length === 0 ? <tr><td colSpan="3" className="px-4 py-6 text-center text-slate-400 italic">No change orders recorded.</td></tr> : 
+                      formData.changeOrders.map((co, i) => (
+                        <tr key={i} className="border-b border-slate-100 last:border-0"><td className="px-4 py-3">{formatDate(co.date)}</td><td className="px-4 py-3">{co.description}</td><td className="px-4 py-3 text-right font-medium text-slate-900">{currency(co.amount)}</td></tr>
+                      ))
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'print' && <PrintView />}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4">
+          <button onClick={onClose} className="rounded-lg border border-slate-300 px-5 py-2.5 font-bold text-slate-700 hover:bg-slate-50 transition-colors">Cancel</button>
+          <button onClick={handleSave} className="rounded-lg bg-blue-600 px-6 py-2.5 font-bold text-white shadow-sm hover:bg-blue-700 transition-colors">Save Project File</button>
+        </div>
+      </div>
+
+      {/* Nested Scope Editor Modal */}
+      {editingScope && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-full">
+            <div className="p-4 bg-slate-900 text-white flex justify-between items-center">
+              <h3 className="font-bold text-lg">Edit Scope: {editingScope.type}</h3>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                 <label className="block text-xs font-bold text-slate-500 uppercase">Product Category
+                    <select value={editingScope.type} onChange={e => setEditingScope({...editingScope, type: e.target.value})} className="mt-1 w-full rounded border-slate-300 p-2 text-sm">
+                      {PRODUCT_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                    </select>
+                 </label>
+                 <label className="block text-xs font-bold text-slate-500 uppercase">Assigned Crew / Sub<input type="text" value={editingScope.crew || ''} onChange={e => setEditingScope({...editingScope, crew: e.target.value})} className="mt-1 w-full rounded border-slate-300 p-2 text-sm" /></label>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+                <h4 className="font-bold text-slate-800 border-b border-slate-200 pb-2">Measurement & Materials</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <label className="block text-xs font-bold text-slate-500 uppercase">Measurer<input type="text" value={editingScope.measurer || ''} onChange={e => setEditingScope({...editingScope, measurer: e.target.value})} className="mt-1 w-full rounded border-slate-300 p-2 text-sm" /></label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase">Measure Done<input type="date" value={editingScope.measureCompleted || ''} onChange={e => setEditingScope({...editingScope, measureCompleted: e.target.value})} className="mt-1 w-full rounded border-slate-300 p-2 text-sm" /></label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase">Mat. List Received<input type="date" value={editingScope.materialListReceived || ''} onChange={e => setEditingScope({...editingScope, materialListReceived: e.target.value})} className="mt-1 w-full rounded border-slate-300 p-2 text-sm" /></label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase">Date Ordered<input type="date" value={editingScope.dateOrdered || ''} onChange={e => setEditingScope({...editingScope, dateOrdered: e.target.value})} className="mt-1 w-full rounded border-slate-300 p-2 text-sm" /></label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase">Vendor<input type="text" value={editingScope.vendor || ''} onChange={e => setEditingScope({...editingScope, vendor: e.target.value})} className="mt-1 w-full rounded border-slate-300 p-2 text-sm" /></label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase">Material ETA<input type="date" value={editingScope.materialETA || ''} onChange={e => setEditingScope({...editingScope, materialETA: e.target.value})} className="mt-1 w-full rounded border-slate-300 p-2 text-sm" /></label>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+                <h4 className="font-bold text-slate-800 border-b border-slate-200 pb-2">Production Schedule</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <label className="block text-xs font-bold text-slate-500 uppercase">Materials In<input type="date" value={editingScope.materialsIn || ''} onChange={e => setEditingScope({...editingScope, materialsIn: e.target.value})} className="mt-1 w-full rounded border-slate-300 p-2 text-sm" /></label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase">Scheduled Install<input type="date" value={editingScope.scheduledInstallDate || ''} onChange={e => setEditingScope({...editingScope, scheduledInstallDate: e.target.value})} className="mt-1 w-full rounded border-slate-300 p-2 text-sm" /></label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase">Completion Date<input type="date" value={editingScope.completionDate || ''} onChange={e => setEditingScope({...editingScope, completionDate: e.target.value})} className="mt-1 w-full rounded border-slate-300 p-2 text-sm" /></label>
+                </div>
+              </div>
+            </div>
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
+              <button onClick={() => setEditingScope(null)} className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-bold">Cancel</button>
+              <button onClick={() => saveScope(editingScope)} className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-bold">Save Scope</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* STREAMING_CHUNK:MainApplication */
+export default function MLBApp() {
+  const [projects, setProjects] = useState(initialProjects);
+  const [currentView, setCurrentView] = useState(VIEWS.CENTER);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [expandedProjects, setExpandedProjects] = useState(new Set());
+
+  const toggleExpand = (id) => {
+    const next = new Set(expandedProjects);
+    next.has(id) ? next.delete(id) : next.add(id);
+    setExpandedProjects(next);
+  };
+
+  // --- VIEWS ---
+  
+  const ProjectCenterView = () => (
+    <div className="space-y-4">
+      {projects.map(proj => {
+        const isExpanded = expandedProjects.has(proj.id);
+        const hasAlerts = proj.decisionNeeded || proj.scopes.some(s => getScopeStatus(s).stage < 0);
+        
+        return (
+          <div key={proj.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-200">
+            {/* Project Header Row (Click to expand) */}
+            <div onClick={() => toggleExpand(proj.id)} className="p-4 flex flex-col md:flex-row md:items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors gap-4">
+              <div className="flex items-center gap-4">
+                <div className={`p-2 rounded-lg ${isExpanded ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
+                  {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                </div>
+                <div>
+                  <h3 className="font-black text-lg text-slate-900">{proj.customer}</h3>
+                  <div className="flex items-center gap-3 text-sm font-medium text-slate-500 mt-0.5">
+                    <span className="flex items-center"><MapPin size={14} className="mr-1"/> {proj.city}</span>
+                    <span className="text-slate-300">•</span>
+                    <span>{proj.scopes.length} Scopes</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-6 md:ml-auto">
+                {hasAlerts && <span className="flex items-center text-xs font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-md border border-amber-200"><AlertTriangle size={14} className="mr-1"/> Attention Needed</span>}
+                <div className="text-right hidden md:block">
+                  <div className="text-xs uppercase font-bold text-slate-400">Current Total</div>
+                  <div className="font-black text-slate-800">{currency(getRevisedAmount(proj))}</div>
+                </div>
+                <div className="text-right hidden sm:block">
+                  <div className="text-xs uppercase font-bold text-slate-400">Active Since</div>
+                  <div className="font-bold text-slate-700">{formatDate(proj.dateSold)}</div>
+                </div>
+                <button onClick={(e) => { e.stopPropagation(); setSelectedProject(proj); }} className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm hover:bg-slate-800">
+                  Open File
+                </button>
+              </div>
+            </div>
+
+            {/* Expanded Scopes List */}
+            {isExpanded && (
+              <div className="border-t border-slate-100 bg-slate-50 p-4 pl-16">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {proj.scopes.map(scope => {
+                    const status = getScopeStatus(scope);
+                    return (
+                      <div key={scope.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                        <div className="flex justify-between items-start mb-3">
+                          <h4 className="font-bold text-slate-800">{scope.type}</h4>
+                          <Badge className={status.color}>{status.label}</Badge>
+                        </div>
+                        <p className="text-xs font-bold text-slate-500 uppercase mb-1">Next Action</p>
+                        <p className="text-sm font-bold text-blue-700">{calculateNextAction(scope)}</p>
+                        
+                        <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500 flex justify-between">
+                          <span>Sub: {scope.crew || 'TBD'}</span>
+                          <span>ETA: {formatDate(scope.materialETA)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {proj.scopes.length === 0 && <p className="text-sm text-slate-500 italic p-2">No work scopes defined for this project.</p>}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const MeasurementQueueView = () => {
+    // Flatten projects to get scopes that need measurement or material lists
+    const queue = projects.flatMap(p => p.scopes.map(s => ({ ...s, customer: p.customer, dateSold: p.dateSold, project: p }))).filter(s => !s.dateOrdered);
+    
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="p-4 border-b border-slate-200 bg-indigo-50 flex items-center gap-3">
+          <Ruler className="text-indigo-600" size={24} />
+          <div>
+            <h2 className="font-bold text-indigo-900 text-lg">Measurement & Material List Queue</h2>
+            <p className="text-sm text-indigo-700">Track the 3-day SLA for getting measurements and material lists submitted to the office.</p>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left whitespace-nowrap">
+            <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-bold border-b border-slate-200">
+              <tr>
+                <th className="px-4 py-3">Customer</th>
+                <th className="px-4 py-3">Scope</th>
+                <th className="px-4 py-3">Days Since Sold</th>
+                <th className="px-4 py-3">Measurer</th>
+                <th className="px-4 py-3">Measured?</th>
+                <th className="px-4 py-3">Mat List Rcvd?</th>
+                <th className="px-4 py-3">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {queue.map((item, i) => {
+                const days = daysBetween(todayISO(), item.dateSold);
+                const isLate = days > 3 && !item.measureCompleted;
+                return (
+                  <tr key={i} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-3 font-bold text-slate-900">{item.customer}</td>
+                    <td className="px-4 py-3 font-medium">{item.type}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded text-xs font-bold ${isLate ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'}`}>{days} Days</span>
+                    </td>
+                    <td className="px-4 py-3">{item.measurer || <span className="text-amber-500 italic">Unassigned</span>}</td>
+                    <td className="px-4 py-3">{item.measureCompleted ? <CheckCircle2 size={16} className="text-emerald-500"/> : '-'}</td>
+                    <td className="px-4 py-3">{item.materialListReceived ? <CheckCircle2 size={16} className="text-emerald-500"/> : '-'}</td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => setSelectedProject(item.project)} className="text-blue-600 font-bold hover:underline text-xs bg-blue-50 px-2 py-1 rounded">Open File</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  const CriticalPathMeetingView = () => (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden text-sm">
+      <div className="p-4 border-b border-slate-200 bg-slate-900 text-white flex justify-between items-center">
+        <h2 className="font-bold text-lg flex items-center"><Presentation className="mr-2"/> Weekly Critical Path Review</h2>
+        <span className="text-xs font-medium opacity-75">Focus: Active uncompleted projects</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left">
+          <thead className="bg-slate-100 text-slate-600 uppercase text-xs font-black border-b-2 border-slate-200">
+            <tr>
+              <th className="px-4 py-3 w-48">Project / Scopes</th>
+              <th className="px-4 py-3 w-32">Value</th>
+              <th className="px-4 py-3">Current Status / Next Action</th>
+              <th className="px-4 py-3">Decision Needed / Notes</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200">
+            {projects.filter(p => !p.scopes.every(s => s.completionDate)).map(proj => (
+              <tr key={proj.id} className="align-top hover:bg-slate-50">
+                <td className="px-4 py-4">
+                  <div className="font-black text-slate-900 text-base">{proj.customer}</div>
+                  <div className="text-xs text-slate-500 mt-1">{daysBetween(todayISO(), proj.dateSold)} days active</div>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {proj.scopes.map((s,i) => <span key={i} className="px-1.5 py-0.5 bg-slate-200 rounded text-[10px] font-bold text-slate-700">{s.type}</span>)}
+                  </div>
+                </td>
+                <td className="px-4 py-4 font-bold text-slate-700">{currency(getRevisedAmount(proj))}</td>
+                <td className="px-4 py-4 space-y-3">
+                  {proj.scopes.map(scope => {
+                    const status = getScopeStatus(scope);
+                    return (
+                      <div key={scope.id} className="p-2 border border-slate-200 rounded bg-white shadow-sm">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-bold">{scope.type}:</span>
+                          <Badge className={status.color}>{status.label}</Badge>
+                        </div>
+                        <div className="text-xs font-bold text-blue-700 flex items-center"><ChevronRight size={12}/> {calculateNextAction(scope)}</div>
+                      </div>
+                    );
+                  })}
+                </td>
+                <td className="px-4 py-4">
+                  <div className="p-3 bg-amber-50 rounded border border-amber-200 min-h-[60px] text-amber-900 font-medium">
+                    {proj.decisionNeeded || <span className="text-amber-700/50 italic">No specific decision requested.</span>}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-100 font-sans flex flex-col md:flex-row">
+      
+      {/* Sidebar Navigation */}
+      <aside className="w-full md:w-64 bg-slate-900 text-slate-300 flex flex-col flex-shrink-0 z-20 sticky top-0 md:h-screen shadow-xl">
+        <div className="p-4 md:p-6 border-b border-slate-800 flex items-center justify-between md:block bg-slate-950">
+          <div>
+            <h1 className="text-xl font-black text-white tracking-tight flex items-center"><LayoutDashboard className="mr-2 text-blue-500" size={24}/> MLB</h1>
+            <p className="text-[10px] uppercase tracking-widest text-slate-500 mt-1 font-bold hidden md:block">Production Command</p>
+          </div>
+          <button onClick={() => setSelectedProject(null)} className="md:hidden bg-blue-600 text-white px-3 py-1.5 rounded text-sm font-bold"><Plus size={16}/></button>
+        </div>
+        
+        <nav className="flex-1 overflow-y-auto p-4 flex md:flex-col gap-2 overflow-x-auto md:overflow-visible hide-scrollbar">
+          <button onClick={() => setCurrentView(VIEWS.CENTER)} className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all whitespace-nowrap md:whitespace-normal ${currentView === VIEWS.CENTER ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'hover:bg-slate-800 hover:text-white'}`}>
+            <ClipboardList size={20} /> Project Center
+          </button>
+          <button onClick={() => setCurrentView(VIEWS.MEASURE)} className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all whitespace-nowrap md:whitespace-normal ${currentView === VIEWS.MEASURE ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50' : 'hover:bg-slate-800 hover:text-white'}`}>
+            <Ruler size={20} /> Measurement Queue
+          </button>
+          <button onClick={() => setCurrentView(VIEWS.CRITICAL)} className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all whitespace-nowrap md:whitespace-normal ${currentView === VIEWS.CRITICAL ? 'bg-slate-700 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white'}`}>
+            <Presentation size={20} /> Critical Path Sync
+          </button>
+          <div className="md:mt-auto pt-4 md:border-t border-slate-800">
+            <button onClick={() => setSelectedProject({})} className="w-full hidden md:flex items-center justify-center gap-2 bg-slate-100 text-slate-900 px-4 py-3 rounded-xl font-black hover:bg-white shadow-sm transition-colors">
+              <Plus size={18} /> New Project
+            </button>
+          </div>
+        </nav>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="flex-1 p-4 md:p-8 overflow-y-auto w-full h-screen">
+        <div className="max-w-7xl mx-auto">
+          {/* Header */}
+          <header className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
+            <div>
+              <h2 className="text-3xl font-black text-slate-900 tracking-tight">
+                {currentView === VIEWS.CENTER && "Project Center"}
+                {currentView === VIEWS.MEASURE && "Measurement Queue"}
+                {currentView === VIEWS.CRITICAL && "Weekly Sync"}
+              </h2>
+              <p className="text-slate-500 font-medium mt-1">
+                {currentView === VIEWS.CENTER && "Manage customer files and track active work scopes."}
+                {currentView === VIEWS.MEASURE && "Track the 3-day SLA for measurements and material lists."}
+                {currentView === VIEWS.CRITICAL && "High-level overview of bottlenecks and needed decisions."}
+              </p>
+            </div>
+            
+            <div className="flex gap-2">
+              <span className="bg-white border border-slate-200 text-slate-600 text-sm font-bold px-4 py-2 rounded-lg flex items-center shadow-sm">
+                <Calendar size={16} className="mr-2"/> {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+              </span>
+            </div>
+          </header>
+
+          {/* Dynamic View */}
+          <div className="pb-24 md:pb-0">
+            {currentView === VIEWS.CENTER && <ProjectCenterView />}
+            {currentView === VIEWS.MEASURE && <MeasurementQueueView />}
+            {currentView === VIEWS.CRITICAL && <CriticalPathMeetingView />}
+          </div>
+        </div>
+      </main>
+
+      {/* Modals */}
+      {selectedProject && (
+        <ProjectModal 
+          project={Object.keys(selectedProject).length > 0 ? selectedProject : null} 
+          onClose={() => setSelectedProject(null)} 
+          onSave={(updatedProject) => {
+            setProjects(prev => {
+              const idx = prev.findIndex(p => p.id === updatedProject.id);
+              if (idx >= 0) { const newArr = [...prev]; newArr[idx] = updatedProject; return newArr; }
+              return [updatedProject, ...prev];
+            });
+            setSelectedProject(null);
+          }}
+        />
+      )}
+      
+      {/* Global Print Styles embedded in JS */}
+      <style dangerouslySetInnerHTML={{__html: `
+        @media print {
+          body * { visibility: hidden; }
+          #printable-area, #printable-area * { visibility: visible; }
+          #printable-area { position: absolute; left: 0; top: 0; width: 100%; }
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      `}} />
+    </div>
+  );
+}
+```eof
