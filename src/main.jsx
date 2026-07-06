@@ -1,10 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import MLBDashboard from './MLBDashboard_field_complete.jsx';
+import Dashboard from './MLBDashboard_phase1.jsx';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <MLBDashboard />
+    <Dashboard />
   </React.StrictMode>
 );
