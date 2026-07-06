@@ -1,5 +1,5 @@
-import React from 'react';
-import { X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Menu, X } from 'lucide-react';
 import { fieldGuideItems, getHelpItemsForScreen, helpById, manualProcessMap } from './helpContent';
 
 const screenLabel = (area, mode) => {
@@ -48,22 +48,50 @@ const HelpCenterDrawer = ({
   onToggleHelpIcons,
   onStartTour,
 }) => {
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (open) setCollapsed(false);
+  }, [open]);
+
   if (!open) return null;
 
   const currentItems = getHelpItemsForScreen(area, mode).filter((item) => item.area !== 'modal').slice(0, 12);
   const selectedItem = helpById[activeTopicId] || currentItems[0] || helpById['global-main-nav'];
 
+  if (collapsed) {
+    return (
+      <div className="fixed right-3 top-24 z-[95] print:hidden">
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-800 shadow-xl hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          aria-label="Expand Help Center"
+          title="Expand Help Center"
+        >
+          <Menu size={18} />
+          Help
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <aside className="fixed inset-y-0 right-0 z-[70] flex w-full max-w-xl flex-col border-l border-slate-200 bg-white shadow-2xl print:hidden" aria-label="Help Center">
+    <aside className="fixed inset-y-0 right-0 z-[95] flex w-full max-w-xl flex-col border-l border-slate-200 bg-white shadow-2xl print:hidden" aria-label="Help Center">
       <div className="border-b border-slate-200 px-5 py-4">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-xl font-black text-slate-950">Help Center</h2>
             <p className="mt-1 text-sm font-medium text-slate-500">Learn how this dashboard replaces the Critical Path Book and whiteboard.</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Close Help Center">
-            <X size={20} />
-          </button>
+          <div className="flex gap-1">
+            <button type="button" onClick={() => setCollapsed(true)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Collapse Help Center" title="Collapse Help Center">
+              <Menu size={20} />
+            </button>
+            <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Close Help Center">
+              <X size={20} />
+            </button>
+          </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <button type="button" onClick={() => onStartTour('full-dashboard')} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800">
