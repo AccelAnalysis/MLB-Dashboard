@@ -3,13 +3,10 @@ import {
   AlertCircle,
   AlertTriangle,
   BookOpen,
-  Calendar,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   ClipboardList,
-  Clock,
-  DollarSign,
   Download,
   FileText,
   LayoutDashboard,
@@ -436,16 +433,11 @@ const Badge = ({ children, className = '' }) => (
   </span>
 );
 
-const MetricCard = ({ icon, label, value, detail, tone = 'bg-white' }) => (
+const MetricCard = ({ label, value, detail, tone = 'bg-white' }) => (
   <div className={`${tone} rounded-lg border border-slate-200 p-5 shadow-sm`}>
-    <div className="flex items-start justify-between gap-4">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-        <h3 className="mt-2 text-3xl font-bold text-slate-950">{value}</h3>
-        {detail && <p className="mt-1 text-sm text-slate-500">{detail}</p>}
-      </div>
-      <div className="rounded-lg bg-slate-100 p-3 text-slate-700">{icon}</div>
-    </div>
+    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+    <h3 className="mt-2 text-3xl font-bold text-slate-950">{value}</h3>
+    {detail && <p className="mt-1 text-sm text-slate-500">{detail}</p>}
   </div>
 );
 
@@ -914,7 +906,7 @@ export default function MLBDashboard() {
       return 'YTD';
     }
   });
-  const [meetingMode, setMeetingMode] = useState(false);
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [wallboardDisplayMode, setWallboardDisplayMode] = useState(() => new URLSearchParams(window.location.search).get('display') === '1');
   const [wallboardMode, setWallboardMode] = useState(() => {
     try {
@@ -1288,11 +1280,11 @@ export default function MLBDashboard() {
 
   const ExecutiveSummary = () => (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-      <MetricCard icon={<DollarSign size={22} />} label="Active Pipeline" value={currency(pipelineMetrics.totalRevenue)} detail={`${pipelineMetrics.activeProjects.length} active projects`} />
-      <MetricCard icon={<DollarSign size={22} />} label="Deposits Held" value={currency(pipelineMetrics.totalDeposits)} detail="Cash collected at sale" />
-      <MetricCard icon={<AlertTriangle size={22} />} label="Open Alerts" value={pipelineMetrics.alertCount} detail="Production bottlenecks" tone={pipelineMetrics.alertCount ? 'bg-red-50' : 'bg-green-50'} />
-      <MetricCard icon={<Calendar size={22} />} label="Scheduled Scopes" value={pipelineMetrics.scheduledCount} detail="Not yet completed" />
-      <MetricCard icon={<Clock size={22} />} label="Avg Sold to Done" value={`${pipelineMetrics.avgSoldToDone || '-'}d`} detail="Completed scopes only" />
+      <MetricCard label="Active Pipeline" value={currency(pipelineMetrics.totalRevenue)} detail={`${pipelineMetrics.activeProjects.length} active projects`} />
+      <MetricCard label="Deposits Held" value={currency(pipelineMetrics.totalDeposits)} detail="Cash collected at sale" />
+      <MetricCard label="Open Alerts" value={pipelineMetrics.alertCount} detail="Production bottlenecks" tone={pipelineMetrics.alertCount ? 'bg-red-50' : 'bg-green-50'} />
+      <MetricCard label="Scheduled Scopes" value={pipelineMetrics.scheduledCount} detail="Not yet completed" />
+      <MetricCard label="Avg Sold to Done" value={`${pipelineMetrics.avgSoldToDone || '-'}d`} detail="Completed scopes only" />
     </div>
   );
 
@@ -1463,11 +1455,11 @@ export default function MLBDashboard() {
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-          <MetricCard icon={<DollarSign size={22} />} label="Sales Revenue" value={currency(totalRevenue)} detail={`${periodFilter} sold projects`} />
-          <MetricCard icon={<TrendingUp size={22} />} label="Projects Sold" value={totalProjects} detail="Filtered by region/period" />
-          <MetricCard icon={<User size={22} />} label="Leads Given" value={totalLeads} detail="Demo lead input" />
-          <MetricCard icon={<TrendingUp size={22} />} label="Close Rate" value={totalLeads ? `${Math.round((totalProjects / totalLeads) * 100)}%` : '-'} detail="Projects divided by leads" />
-          <MetricCard icon={<AlertTriangle size={22} />} label="Cancel Rate" value={totalProjects + totalCancelled ? `${Math.round((totalCancelled / (totalProjects + totalCancelled)) * 100)}%` : '-'} detail={`${totalCancelled} cancelled`} tone={totalCancelled ? 'bg-red-50' : 'bg-white'} />
+          <MetricCard label="Sales Revenue" value={currency(totalRevenue)} detail={`${periodFilter} sold projects`} />
+          <MetricCard label="Projects Sold" value={totalProjects} detail="Filtered by region/period" />
+          <MetricCard label="Leads Given" value={totalLeads} detail="Demo lead input" />
+          <MetricCard label="Close Rate" value={totalLeads ? `${Math.round((totalProjects / totalLeads) * 100)}%` : '-'} detail="Projects divided by leads" />
+          <MetricCard label="Cancel Rate" value={totalProjects + totalCancelled ? `${Math.round((totalCancelled / (totalProjects + totalCancelled)) * 100)}%` : '-'} detail={`${totalCancelled} cancelled`} tone={totalCancelled ? 'bg-red-50' : 'bg-white'} />
         </div>
 
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -1830,18 +1822,13 @@ export default function MLBDashboard() {
   ];
 
   return (
-    <div className={`min-h-screen bg-slate-100 font-sans text-slate-900 ${meetingMode ? 'text-[17px]' : ''}`}>
+    <div className="min-h-screen bg-slate-100 font-sans text-slate-900">
       <header className={`${wallboardDisplayMode && currentView === VIEWS.WALLBOARD ? 'hidden' : 'sticky'} top-0 z-30 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur`}>
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="mx-auto flex w-full max-w-[1920px] flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="flex items-center gap-2">
               <LayoutDashboard className="text-blue-600" size={26} />
               <h1 className="text-2xl font-black tracking-tight text-slate-950">Major League Builders Operator View</h1>
-            </div>
-            <p className="mt-1 text-sm text-slate-500">Project files, scope-level critical path, bottlenecks, sales metrics, book replacement, and TV wallboard.</p>
-            <div className="mt-2 flex flex-wrap gap-2 text-xs font-bold">
-              <span className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-blue-700">Local demo storage active</span>
-              <span className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700">Prototype data — not yet connected to JobNimbus or QuickBooks.</span>
             </div>
           </div>
 
@@ -1859,25 +1846,41 @@ export default function MLBDashboard() {
                 {PERIODS.map((period) => <option key={period} value={period}>{period}</option>)}
               </select>
             </label>
-            <button type="button" onClick={() => setMeetingMode((value) => !value)} className={`rounded-lg px-4 py-2 text-sm font-bold shadow-sm ${meetingMode ? 'bg-blue-600 text-white' : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`}>
-              <Presentation size={16} className="mr-2 inline" /> Meeting Mode
-            </button>
-            <button type="button" onClick={() => exportProjectsJson(projects)} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
-              <Download size={16} className="mr-2 inline" /> Export Backup JSON
-            </button>
-            <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
-              <Upload size={16} className="mr-2 inline" /> Import Backup JSON
-            </button>
-            <button type="button" onClick={handleResetDemoData} className="rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-bold text-red-700 shadow-sm hover:bg-red-50">
-              Reset Demo Data
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setAdminMenuOpen((open) => !open)}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                aria-label="Open admin tools"
+              >
+                <User size={18} />
+              </button>
+              {adminMenuOpen && (
+                <div className="absolute right-0 z-40 mt-2 w-72 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+                  <div className="border-b border-slate-100 px-4 py-3">
+                    <p className="text-sm font-black text-slate-900">Admin Tools</p>
+                    <p className="mt-1 text-xs font-medium text-slate-500">Local demo storage active</p>
+                    <p className="mt-1 text-xs text-slate-500">Prototype data is not connected to JobNimbus or QuickBooks.</p>
+                  </div>
+                  <button type="button" onClick={() => { exportProjectsJson(projects); setAdminMenuOpen(false); }} className="flex w-full items-center px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-slate-50">
+                    <Download size={16} className="mr-2" /> Export Backup JSON
+                  </button>
+                  <button type="button" onClick={() => { fileInputRef.current?.click(); setAdminMenuOpen(false); }} className="flex w-full items-center px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-slate-50">
+                    <Upload size={16} className="mr-2" /> Import Backup JSON
+                  </button>
+                  <button type="button" onClick={() => { setAdminMenuOpen(false); handleResetDemoData(); }} className="flex w-full items-center border-t border-slate-100 px-4 py-3 text-left text-sm font-bold text-red-700 hover:bg-red-50">
+                    <Trash2 size={16} className="mr-2" /> Reset Demo Data
+                  </button>
+                </div>
+              )}
+            </div>
             <button type="button" onClick={() => setSelectedProject(emptyProject())} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
               <Plus size={16} className="mr-2 inline" /> New Project
             </button>
           </div>
         </div>
 
-        <nav className="mx-auto flex max-w-7xl gap-2 overflow-x-auto px-4 pb-3">
+        <nav className="mx-auto flex w-full max-w-[1920px] gap-2 overflow-x-auto px-4 pb-3">
           {tabs.map((tab) => (
             <button
               key={tab.id}
@@ -1894,7 +1897,7 @@ export default function MLBDashboard() {
         </nav>
       </header>
 
-      <main className={`${currentView === VIEWS.WALLBOARD ? 'mx-auto max-w-[1920px] px-3 py-3' : 'mx-auto max-w-7xl space-y-6 px-4 py-6'}`}>
+      <main className={`${currentView === VIEWS.WALLBOARD ? 'mx-auto max-w-[1920px] px-3 py-3' : 'mx-auto w-full max-w-[1920px] space-y-6 px-4 py-6'}`}>
         {currentView !== VIEWS.CRITICAL && currentView !== VIEWS.WALLBOARD && currentView !== VIEWS.BOOK && <ExecutiveSummary />}
         {currentView === VIEWS.CENTER && <ProjectCenterView />}
         {currentView === VIEWS.MEASURE && <MeasurementQueueView />}
