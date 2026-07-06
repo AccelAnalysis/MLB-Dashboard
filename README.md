@@ -14,3 +14,12 @@ npm run dev
 ```bash
 npm run build
 ```
+
+## GitHub Pages
+
+This repository supports two GitHub Pages publishing options:
+
+- Preferred: `Settings` -> `Pages` -> `Source: GitHub Actions`
+- Branch fallback: `Settings` -> `Pages` -> `Deploy from a branch`, then choose `main` and `/docs`
+
+The `/docs` folder contains the compiled Vite build for branch-based Pages publishing.
