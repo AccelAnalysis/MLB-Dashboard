@@ -43,6 +43,14 @@ const formatDate = (dateStr) => {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${dateStr}T00:00:00`));
 };
 
+const getPeriodLabel = (period, customStart, customEnd) => {
+  if (period !== 'Custom') return period;
+  if (customStart && customEnd) return `Custom: ${formatDate(customStart)} - ${formatDate(customEnd)}`;
+  if (customStart) return `Custom: Since ${formatDate(customStart)}`;
+  if (customEnd) return `Custom: Through ${formatDate(customEnd)}`;
+  return 'Custom: All dates';
+};
+
 const daysBetween = (newerDate, olderDate) => {
   if (!newerDate || !olderDate) return 0;
   return Math.floor((new Date(`${newerDate}T00:00:00`) - new Date(`${olderDate}T00:00:00`)) / 86400000);
@@ -214,7 +222,8 @@ const initialProjects = [
 const PRODUCT_CATEGORIES = ['Roofs', 'Siding', 'Windows', 'Decks', 'Gutters', 'Doors', 'Trim', 'Repairs', 'Misc'];
 const TRADE_BOARD_COLUMNS = ['Roofs', 'Repairs', 'Siding', 'Trim', 'Gutters', 'Windows', 'Decks', 'Doors', 'Misc'];
 const REGIONS = ['All', 'Virginia', 'Carolina'];
-const PERIODS = ['MTD', 'QTD', 'YTD', 'All'];
+const PERIODS = ['Today', 'WTD', 'MTD', 'QTD', 'YTD', 'All', 'Custom'];
+const MODAL_TAB_IDS = ['overview', 'scopes', 'financials', 'print'];
 const VIEWS = {
   CENTER: 'center',
   MEASURE: 'measure',
@@ -524,19 +533,35 @@ const downloadCsv = (filename, rows) => {
   URL.revokeObjectURL(url);
 };
 
-const isInPeriod = (dateStr, period) => {
+const isInPeriod = (dateStr, period, customStart = '', customEnd = '') => {
   if (period === 'All' || !dateStr) return true;
   const date = new Date(`${dateStr}T00:00:00`);
   const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yearStart = new Date(now.getFullYear(), 0, 1);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
   const quarterStart = new Date(now.getFullYear(), quarterStartMonth, 1);
+  const mondayOffset = (now.getDay() + 6) % 7;
+  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - mondayOffset);
 
-  if (period === 'MTD') return date >= monthStart;
-  if (period === 'QTD') return date >= quarterStart;
-  if (period === 'YTD') return date >= yearStart;
+  if (period === 'Today') return date.getTime() === today.getTime();
+  if (period === 'WTD') return date >= weekStart && date <= today;
+  if (period === 'MTD') return date >= monthStart && date <= today;
+  if (period === 'QTD') return date >= quarterStart && date <= today;
+  if (period === 'YTD') return date >= yearStart && date <= today;
+  if (period === 'Custom') {
+    const start = customStart ? new Date(`${customStart}T00:00:00`) : null;
+    const end = customEnd ? new Date(`${customEnd}T00:00:00`) : null;
+    return (!start || date >= start) && (!end || date <= end);
+  }
   return true;
+};
+
+const handleActivationKey = (event, callback) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  callback(event);
 };
 
 const Badge = ({ children, className = '' }) => (
@@ -545,8 +570,16 @@ const Badge = ({ children, className = '' }) => (
   </span>
 );
 
-const MetricCard = ({ label, value, detail, tone = 'bg-white', helpId, helpIcon }) => (
-  <div data-help-id={helpId} className={`${tone} rounded-lg border border-slate-200 p-5 shadow-sm`}>
+const MetricCard = ({ label, value, detail, tone = 'bg-white', helpId, helpIcon, onClick, ariaLabel }) => (
+  <div
+    data-help-id={helpId}
+    role={onClick ? 'button' : undefined}
+    tabIndex={onClick ? 0 : undefined}
+    aria-label={ariaLabel}
+    onClick={onClick}
+    onKeyDown={onClick ? (event) => handleActivationKey(event, onClick) : undefined}
+    className={`${tone} rounded-lg border border-slate-200 p-5 shadow-sm ${onClick ? 'cursor-pointer transition-colors hover:border-blue-300 hover:bg-blue-50/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2' : ''}`}
+  >
     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
     <h3 className="mt-2 text-3xl font-bold text-slate-950">{value}{helpIcon}</h3>
     {detail && <p className="mt-1 text-sm text-slate-500">{detail}</p>}
@@ -562,12 +595,34 @@ const WhiteboardStatusKey = ({ dark = false, helpId }) => (
   </div>
 );
 
-const ProjectModal = ({ project, onClose, onSave, helpIconsEnabled = false, onOpenHelpTopic = () => {} }) => {
+const ProjectModal = ({
+  project,
+  onClose,
+  onSave,
+  initialTab = 'overview',
+  initialScopeId = null,
+  focusArea = null,
+  helpIconsEnabled = false,
+  onOpenHelpTopic = () => {},
+}) => {
   const [formData, setFormData] = useState(project || emptyProject());
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(MODAL_TAB_IDS.includes(initialTab) ? initialTab : 'overview');
   const [editingScope, setEditingScope] = useState(null);
   const [newChangeOrder, setNewChangeOrder] = useState({ date: todayISO(), description: '', amount: '' });
+  const scopeCardRefs = useRef({});
   const Help = ({ id }) => <HelpIcon item={helpById[id]} enabled={helpIconsEnabled} onOpenTopic={onOpenHelpTopic} />;
+
+  useEffect(() => {
+    if (MODAL_TAB_IDS.includes(initialTab)) setActiveTab(initialTab);
+  }, [initialTab, project?.id]);
+
+  useEffect(() => {
+    if (activeTab !== 'scopes' || !initialScopeId) return undefined;
+    const timer = window.setTimeout(() => {
+      scopeCardRefs.current[initialScopeId]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, initialScopeId]);
 
   const updateField = (field, value) => setFormData((prev) => ({ ...prev, [field]: value }));
   const updateIntake = (field, value) => setFormData((prev) => ({ ...prev, intake: { ...prev.intake, [field]: value } }));
@@ -808,8 +863,17 @@ const ProjectModal = ({ project, onClose, onSave, helpIconsEnabled = false, onOp
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   {formData.scopes.map((scope) => {
                     const status = getScopeStatus(scope);
+                    const isTargetScope = scope.id === initialScopeId;
                     return (
-                      <div key={scope.id} className="rounded-lg border border-slate-200 bg-white shadow-sm transition-colors hover:border-blue-400">
+                      <div
+                        key={scope.id}
+                        ref={(node) => {
+                          if (node) scopeCardRefs.current[scope.id] = node;
+                        }}
+                        className={`rounded-lg border bg-white shadow-sm transition-colors hover:border-blue-400 ${
+                          isTargetScope ? 'border-blue-400 bg-blue-50/40 ring-2 ring-blue-500 ring-offset-2' : 'border-slate-200'
+                        }`}
+                      >
                         <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50 p-4">
                           <h4 className="text-lg font-black text-slate-800">{scope.type}</h4>
                           <Badge className={status.color}>{status.label}</Badge>
@@ -829,6 +893,7 @@ const ProjectModal = ({ project, onClose, onSave, helpIconsEnabled = false, onOp
                         )}
                         <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/50 p-3">
                           <span className="text-xs font-bold text-slate-500">Next: <span className="text-blue-600">{calculateNextAction(scope, formData)}</span></span>
+                          {isTargetScope && focusArea === 'scope' && <span className="rounded-full bg-blue-100 px-2 py-1 text-[10px] font-black uppercase text-blue-700">Selected scope</span>}
                           <button type="button" onClick={() => setEditingScope({ ...emptyScope(), ...scope, specs: scope.specs || {} })} className="rounded-lg bg-blue-50 px-3 py-1.5 text-sm font-bold text-blue-600 hover:text-blue-800">Edit</button>
                         </div>
                       </div>
@@ -1013,6 +1078,22 @@ export default function MLBDashboard() {
       return 'YTD';
     }
   });
+  const [customPeriodStart, setCustomPeriodStart] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(UI_STORAGE_KEY) || '{}');
+      return typeof saved.customPeriodStart === 'string' ? saved.customPeriodStart : '';
+    } catch {
+      return '';
+    }
+  });
+  const [customPeriodEnd, setCustomPeriodEnd] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(UI_STORAGE_KEY) || '{}');
+      return typeof saved.customPeriodEnd === 'string' ? saved.customPeriodEnd : '';
+    } catch {
+      return '';
+    }
+  });
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [helpCenterOpen, setHelpCenterOpen] = useState(false);
   const [activeHelpTopicId, setActiveHelpTopicId] = useState(() => {
@@ -1050,11 +1131,12 @@ export default function MLBDashboard() {
     }
   });
   const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [selectedProject, setSelectedProject] = useState(null);
+  const [projectModalState, setProjectModalState] = useState(null);
   const [expandedProjects, setExpandedProjects] = useState(() => new Set(['P-1001']));
   const currentView = navigationToView(mainArea, productionMode, bottleneckMode);
   const currentHelpMode = mainArea === MAIN_AREAS.PRODUCTION ? productionMode : mainArea === MAIN_AREAS.BOTTLENECKS ? bottleneckMode : null;
   const showHelpIcons = helpIconsEnabled && !(wallboardDisplayMode && currentView === VIEWS.WALLBOARD);
+  const periodLabel = getPeriodLabel(periodFilter, customPeriodStart, customPeriodEnd);
   const Help = ({ id }) => <HelpIcon item={helpById[id]} enabled={showHelpIcons} onOpenTopic={openHelpTopic} />;
 
   useEffect(() => {
@@ -1067,8 +1149,18 @@ export default function MLBDashboard() {
   }, [projects]);
 
   useEffect(() => {
-    localStorage.setItem(UI_STORAGE_KEY, JSON.stringify({ currentView, mainArea, productionMode, bottleneckMode, wallboardMode, regionFilter, periodFilter }));
-  }, [currentView, mainArea, productionMode, bottleneckMode, wallboardMode, regionFilter, periodFilter]);
+    localStorage.setItem(UI_STORAGE_KEY, JSON.stringify({
+      currentView,
+      mainArea,
+      productionMode,
+      bottleneckMode,
+      wallboardMode,
+      regionFilter,
+      periodFilter,
+      customPeriodStart,
+      customPeriodEnd,
+    }));
+  }, [currentView, mainArea, productionMode, bottleneckMode, wallboardMode, regionFilter, periodFilter, customPeriodStart, customPeriodEnd]);
 
   useEffect(() => {
     localStorage.setItem(HELP_STORAGE_KEY, JSON.stringify({ helpIconsEnabled, completedTours, lastOpenedHelpTopic: activeHelpTopicId }));
@@ -1143,13 +1235,42 @@ export default function MLBDashboard() {
     }
   };
 
+  const openProjectFile = (project, options = {}) => {
+    if (!project) return;
+    setProjectModalState({
+      project,
+      initialTab: MODAL_TAB_IDS.includes(options.initialTab) ? options.initialTab : 'overview',
+      initialScopeId: options.initialScopeId || null,
+      focusArea: options.focusArea || null,
+    });
+  };
+
+  const openScopeFile = (project, scope) => {
+    openProjectFile(project, { initialTab: 'scopes', initialScopeId: scope?.id || null, focusArea: 'scope' });
+  };
+
+  const openAlertItem = (item, alertType) => {
+    if (item.scope) {
+      openScopeFile(item.project, item.scope);
+      return;
+    }
+    if (alertType === 'Collection Needed' || alertType === 'Collection / Funding') {
+      openProjectFile(item.project, { initialTab: 'financials', focusArea: 'collection' });
+      return;
+    }
+    openProjectFile(item.project, {
+      initialTab: 'overview',
+      focusArea: alertType === 'Decision Needed' ? 'decision' : null,
+    });
+  };
+
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => {
       const regionMatch = regionFilter === 'All' || project.region === regionFilter;
-      const periodMatch = isInPeriod(project.dateSold, periodFilter);
+      const periodMatch = isInPeriod(project.dateSold, periodFilter, customPeriodStart, customPeriodEnd);
       return regionMatch && periodMatch;
     });
-  }, [projects, regionFilter, periodFilter]);
+  }, [projects, regionFilter, periodFilter, customPeriodStart, customPeriodEnd]);
 
   const flatScopes = useMemo(
     () => filteredProjects.flatMap((project) => project.scopes.map((scope) => ({ project, scope }))),
@@ -1372,7 +1493,7 @@ export default function MLBDashboard() {
       const exists = current.some((project) => project.id === updatedProject.id);
       return exists ? current.map((project) => (project.id === updatedProject.id ? updatedProject : project)) : [updatedProject, ...current];
     });
-    setSelectedProject(null);
+    setProjectModalState(null);
   };
 
   const handleResetDemoData = () => {
@@ -1490,9 +1611,28 @@ export default function MLBDashboard() {
 
   const ExecutiveSummary = () => (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5" data-help-id="customer-view-summary">
-      <MetricCard label="Active Pipeline" value={currency(pipelineMetrics.totalRevenue)} detail={`${pipelineMetrics.activeProjects.length} active projects`} />
+      <MetricCard
+        label="Active Pipeline"
+        value={currency(pipelineMetrics.totalRevenue)}
+        detail={`${pipelineMetrics.activeProjects.length} active projects`}
+        ariaLabel="Open Production Customer view"
+        onClick={() => {
+          setMainArea(MAIN_AREAS.PRODUCTION);
+          setProductionMode(PRODUCTION_MODES.CUSTOMER);
+        }}
+      />
       <MetricCard label="Deposits Held" value={currency(pipelineMetrics.totalDeposits)} detail="Cash collected at sale" />
-      <MetricCard label="Open Alerts" value={pipelineMetrics.alertCount} detail="Production bottlenecks" tone={pipelineMetrics.alertCount ? 'bg-red-50' : 'bg-green-50'} />
+      <MetricCard
+        label="Open Alerts"
+        value={pipelineMetrics.alertCount}
+        detail="Production bottlenecks"
+        tone={pipelineMetrics.alertCount ? 'bg-red-50' : 'bg-green-50'}
+        ariaLabel="Open Bottlenecks view"
+        onClick={() => {
+          setMainArea(MAIN_AREAS.BOTTLENECKS);
+          setBottleneckMode(BOTTLENECK_MODES.ALL);
+        }}
+      />
       <MetricCard label="Scheduled Scopes" value={pipelineMetrics.scheduledCount} detail="Not yet completed" />
       <MetricCard label="Avg Sold to Done" value={`${pipelineMetrics.avgSoldToDone || '-'}d`} detail="Completed scopes only" />
     </div>
@@ -1532,7 +1672,7 @@ export default function MLBDashboard() {
                   <div className="text-xs font-bold uppercase text-slate-400">Active Since</div>
                   <div className="font-bold text-slate-700">{formatDate(project.dateSold)}</div>
                 </div>
-                <button type="button" onClick={(event) => { event.stopPropagation(); setSelectedProject(project); }} data-help-id="customer-open-file" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
+                <button type="button" onClick={(event) => { event.stopPropagation(); openProjectFile(project, { initialTab: 'overview' }); }} data-help-id="customer-open-file" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
                   Open File
                 </button>
                 <Help id="customer-open-file" />
@@ -1545,7 +1685,16 @@ export default function MLBDashboard() {
                   {project.scopes.map((scope) => {
                     const status = getScopeStatus(scope);
                     return (
-                      <div key={scope.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" data-help-id="customer-scope-card">
+                      <div
+                        key={scope.id}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Open ${project.customer} ${scope.type} scope`}
+                        onClick={() => openScopeFile(project, scope)}
+                        onKeyDown={(event) => handleActivationKey(event, () => openScopeFile(project, scope))}
+                        className="cursor-pointer rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                        data-help-id="customer-scope-card"
+                      >
                         <div className="mb-3 flex items-start justify-between gap-3">
                           <h4 className="font-bold text-slate-800">{scope.type}</h4>
                           <Badge className={status.color}>{status.label}</Badge>
@@ -1588,7 +1737,7 @@ export default function MLBDashboard() {
           <table className="w-full whitespace-nowrap text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs font-bold uppercase text-slate-500">
               <tr>
-                {['Customer', 'Scope', 'Sold', 'Measure Requested', 'Days Since Request', 'Measurer', 'Measured?', 'Mat List Rcvd?', 'Action'].map((heading) => <th key={heading} className="px-4 py-3">{heading}</th>)}
+                {['Customer', 'Scope', 'Sold', 'Measure Requested', 'Days Since Request', 'Measurer', 'Measured?', 'Mat List Rcvd?'].map((heading) => <th key={heading} className="px-4 py-3">{heading}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -1597,7 +1746,16 @@ export default function MLBDashboard() {
                 const days = daysBetween(todayISO(), anchor);
                 const isLate = days > 3 && !scope.measureCompleted;
                 return (
-                  <tr key={`${project.id}-${scope.id}`} className="transition-colors hover:bg-slate-50">
+                  <tr
+                    key={`${project.id}-${scope.id}`}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open ${project.customer} ${scope.type} scope`}
+                    onClick={() => openScopeFile(project, scope)}
+                    onKeyDown={(event) => handleActivationKey(event, () => openScopeFile(project, scope))}
+                    data-help-id="measurement-open-file"
+                    className="cursor-pointer transition-colors hover:bg-blue-50/50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+                  >
                     <td className="px-4 py-3 font-bold text-slate-900">{project.customer}</td>
                     <td className="px-4 py-3 font-medium">{scope.type}</td>
                     <td className="px-4 py-3">{formatDate(project.dateSold)}</td>
@@ -1606,7 +1764,6 @@ export default function MLBDashboard() {
                     <td className="px-4 py-3" data-help-id="measurement-measurer">{scope.measurer || <span className="italic text-amber-500">Unassigned</span>}</td>
                     <td className="px-4 py-3">{scope.measureCompleted ? <CheckCircle2 size={16} className="text-emerald-500" /> : '-'}</td>
                     <td className="px-4 py-3" data-help-id="measurement-material-list-received">{scope.materialListReceived ? <CheckCircle2 size={16} className="text-emerald-500" /> : '-'}</td>
-                    <td className="px-4 py-3"><button type="button" onClick={() => setSelectedProject(project)} data-help-id="measurement-open-file" className="rounded bg-blue-50 px-2 py-1 text-xs font-bold text-blue-600 hover:underline">Open File</button><Help id="measurement-open-file" /></td>
                   </tr>
                 );
               })}
@@ -1636,7 +1793,7 @@ export default function MLBDashboard() {
                 <button
                   key={`${alertGroup.type}-${item.project.id}-${item.scope?.id || 'project'}`}
                   type="button"
-                  onClick={() => setSelectedProject(item.project)}
+                  onClick={() => openAlertItem(item, alertGroup.type)}
                   data-help-id="bottleneck-open-file"
                   className="flex w-full cursor-pointer justify-between gap-3 rounded border border-slate-100 bg-slate-50 p-2 text-left text-sm hover:bg-slate-100"
                 >
@@ -1667,7 +1824,7 @@ export default function MLBDashboard() {
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-5" data-help-id="sales-summary-metrics">
-          <MetricCard label="Sales Revenue" value={currency(totalRevenue)} detail={`${periodFilter} sold projects`} helpId="sales-revenue" helpIcon={<Help id="sales-revenue" />} />
+          <MetricCard label="Sales Revenue" value={currency(totalRevenue)} detail={`${periodLabel} sold projects`} helpId="sales-revenue" helpIcon={<Help id="sales-revenue" />} />
           <MetricCard label="Projects Sold" value={totalProjects} detail="Filtered by region/period" helpId="sales-projects-sold" helpIcon={<Help id="sales-projects-sold" />} />
           <MetricCard label="Leads Given" value={totalLeads} detail="Demo lead input" helpId="sales-leads-given" helpIcon={<Help id="sales-leads-given" />} />
           <MetricCard label="Close Rate" value={totalLeads ? `${Math.round((totalProjects / totalLeads) * 100)}%` : '-'} detail="Projects divided by leads" helpId="sales-close-rate" helpIcon={<Help id="sales-close-rate" />} />
@@ -1725,7 +1882,15 @@ export default function MLBDashboard() {
           </thead>
           <tbody className="divide-y divide-slate-200">
             {filteredProjects.filter((project) => !project.cancelled && !project.scopes.every((scope) => scope.completionDate)).map((project) => (
-              <tr key={project.id} className="align-top hover:bg-slate-50">
+              <tr
+                key={project.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`Open ${project.customer} project overview`}
+                onClick={() => openProjectFile(project, { initialTab: 'overview' })}
+                onKeyDown={(event) => handleActivationKey(event, () => openProjectFile(project, { initialTab: 'overview' }))}
+                className="cursor-pointer align-top hover:bg-blue-50/40 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+              >
                 <td className="px-4 py-4">
                   <div className="text-base font-black text-slate-900">{project.customer}</div>
                   <div className="mt-1 text-xs text-slate-500">{daysBetween(todayISO(), project.dateSold)} days active</div>
@@ -1738,7 +1903,21 @@ export default function MLBDashboard() {
                   {project.scopes.map((scope) => {
                     const status = getScopeStatus(scope);
                     return (
-                      <div key={scope.id} className="rounded border border-slate-200 bg-white p-2 shadow-sm">
+                      <div
+                        key={scope.id}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Open ${project.customer} ${scope.type} scope`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openScopeFile(project, scope);
+                        }}
+                        onKeyDown={(event) => {
+                          event.stopPropagation();
+                          handleActivationKey(event, () => openScopeFile(project, scope));
+                        }}
+                        className="cursor-pointer rounded border border-slate-200 bg-white p-2 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50/60 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                      >
                         <div className="mb-1 flex items-center gap-2">
                           <span className="font-bold">{scope.type}:</span>
                           <Badge className={status.color}>{status.label}</Badge>
@@ -1749,7 +1928,20 @@ export default function MLBDashboard() {
                   })}
                 </td>
                 <td className="px-4 py-4">
-                  <div className="min-h-[60px] rounded border border-amber-200 bg-amber-50 p-3 font-medium text-amber-900">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open ${project.customer} decision needed notes`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openProjectFile(project, { initialTab: 'overview', focusArea: 'decision' });
+                    }}
+                    onKeyDown={(event) => {
+                      event.stopPropagation();
+                      handleActivationKey(event, () => openProjectFile(project, { initialTab: 'overview', focusArea: 'decision' }));
+                    }}
+                    className="min-h-[60px] cursor-pointer rounded border border-amber-200 bg-amber-50 p-3 font-medium text-amber-900 transition-colors hover:border-amber-300 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
+                  >
                     {project.decisionNeeded || <span className="italic text-amber-700/50">No specific decision requested.</span>}
                   </div>
                 </td>
@@ -1765,7 +1957,7 @@ export default function MLBDashboard() {
     <div className="space-y-4 printable-book">
       <div className="hidden print:block">
         <h1 className="text-2xl font-black">Major League Builders Critical Path Book</h1>
-        <p className="mt-1 text-sm">Printed {new Date().toLocaleDateString('en-US')} | Region: {regionFilter} | Period: {periodFilter}</p>
+        <p className="mt-1 text-sm">Printed {new Date().toLocaleDateString('en-US')} | Region: {regionFilter} | Period: {periodLabel}</p>
         <div className="mt-3">
           <WhiteboardStatusKey />
         </div>
@@ -1788,7 +1980,6 @@ export default function MLBDashboard() {
           <table className="min-w-[1500px] w-full text-left text-xs">
             <thead className="bg-slate-100 text-[11px] font-black uppercase tracking-wide text-slate-600">
               <tr>
-                <th className="border-b border-slate-200 px-3 py-3 print:hidden">Action</th>
                 {['Date Sold', 'Customer', 'City', 'Scope', 'Salesperson', 'Amount', 'Measure Req.', 'Measure Date', 'Order Date', 'Material ETA', 'Materials IN', 'Scheduled', 'Crew/Sub', 'Completion', 'Collected', 'Notes'].map((heading) => (
                   <th key={heading} className="border-b border-slate-200 px-3 py-3">{heading}</th>
                 ))}
@@ -1798,18 +1989,16 @@ export default function MLBDashboard() {
               {bookRows.map(({ project, scope, id }) => {
                 const alerts = scope ? getScopeAlerts(project, scope) : getProjectAlerts(project);
                 return (
-                  <tr key={id} className={`${alerts.length ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-slate-50'} align-top transition-colors`}>
-                    <td className="px-3 py-3 print:hidden">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedProject(project)}
-                        data-help-id="book-open-file"
-                        className="whitespace-nowrap rounded bg-slate-900 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                      >
-                        Open File
-                      </button>
-                      <Help id="book-open-file" />
-                    </td>
+                  <tr
+                    key={id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open ${project.customer}${scope ? ` ${scope.type} scope` : ' project overview'}`}
+                    onClick={() => (scope ? openScopeFile(project, scope) : openProjectFile(project, { initialTab: 'overview' }))}
+                    onKeyDown={(event) => handleActivationKey(event, () => (scope ? openScopeFile(project, scope) : openProjectFile(project, { initialTab: 'overview' })))}
+                    data-help-id="book-open-file"
+                    className={`${alerts.length ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-blue-50/40'} cursor-pointer align-top transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500`}
+                  >
                     <td className="px-3 py-3 font-semibold text-slate-700" data-help-id="book-date-columns">{formatDate(project.dateSold)}</td>
                     <td className="px-3 py-3 font-black text-slate-900">{project.customer}{project.cancelled && <div className="mt-1 text-[10px] font-black uppercase text-red-600">Cancelled {formatDate(project.cancellationDate)}</div>}</td>
                     <td className="px-3 py-3">{project.city}</td>
@@ -1852,6 +2041,7 @@ export default function MLBDashboard() {
     const { project, scope, alerts, daysActive, daysStuck } = item;
     const status = getScopeStatus(scope);
     const urgent = alerts.length > 0;
+    const clickable = !wallboardDisplayMode;
     const dateLabel = scope.scheduledInstallDate
       ? `Install ${formatDate(scope.scheduledInstallDate)}`
       : scope.materialETA
@@ -1863,7 +2053,16 @@ export default function MLBDashboard() {
             : `Sold ${formatDate(project.dateSold)}`;
 
     return (
-      <div className={`rounded-lg border p-3 shadow ${urgent ? 'border-red-500 bg-red-950/70' : 'border-slate-700 bg-slate-900'}`}>
+      <div
+        role={clickable ? 'button' : undefined}
+        tabIndex={clickable ? 0 : undefined}
+        aria-label={clickable ? `Open ${project.customer} ${scope.type} scope` : undefined}
+        onClick={clickable ? () => openScopeFile(project, scope) : undefined}
+        onKeyDown={clickable ? (event) => handleActivationKey(event, () => openScopeFile(project, scope)) : undefined}
+        className={`rounded-lg border p-3 shadow ${urgent ? 'border-red-500 bg-red-950/70' : 'border-slate-700 bg-slate-900'} ${
+          clickable ? 'cursor-pointer transition-colors hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-slate-950' : ''
+        }`}
+      >
         <div className="flex items-start justify-between gap-2">
           <div>
             <h5 className="text-lg font-black leading-tight text-white">{project.customer}</h5>
@@ -1912,7 +2111,7 @@ export default function MLBDashboard() {
               <div className="flex flex-wrap items-center gap-3">
                 <Monitor className="text-blue-400" size={30} />
                 <h2 className="text-3xl font-black tracking-tight">Major League Builders TV Wallboard<Help id="wallboard-header" /></h2>
-                <span className="rounded bg-blue-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-blue-200">{regionFilter} | {periodFilter}</span>
+                <span className="rounded bg-blue-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-blue-200">{regionFilter} | {periodLabel}</span>
               </div>
               <p className="mt-1 text-base font-semibold text-slate-300">Last updated {lastUpdatedLabel}</p>
             </div>
@@ -1981,9 +2180,20 @@ export default function MLBDashboard() {
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {group.items.slice(0, 3).map((item) => (
-                      <span key={`${group.type}-${item.project.id}-${item.scope?.id || 'project'}`} className="rounded bg-white/10 px-2 py-1 text-xs font-bold text-red-100">
-                        {item.project.customer}{item.scope ? ` / ${item.scope.type}` : ''}
-                      </span>
+                      wallboardDisplayMode ? (
+                        <span key={`${group.type}-${item.project.id}-${item.scope?.id || 'project'}`} className="rounded bg-white/10 px-2 py-1 text-xs font-bold text-red-100">
+                          {item.project.customer}{item.scope ? ` / ${item.scope.type}` : ''}
+                        </span>
+                      ) : (
+                        <button
+                          key={`${group.type}-${item.project.id}-${item.scope?.id || 'project'}`}
+                          type="button"
+                          onClick={() => openAlertItem(item, group.type)}
+                          className="rounded bg-white/10 px-2 py-1 text-left text-xs font-bold text-red-100 transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-red-200"
+                        >
+                          {item.project.customer}{item.scope ? ` / ${item.scope.type}` : ''}
+                        </button>
+                      )
                     ))}
                   </div>
                 </div>
@@ -2018,7 +2228,17 @@ export default function MLBDashboard() {
             <h3 className="mb-4 text-2xl font-black text-white">Critical Path Spotlight<Help id="wallboard-critical-path-spotlight" /></h3>
             <div className="space-y-3">
               {criticalPathSpotlight.map((item) => (
-                <div key={item.id} className="rounded-lg border border-amber-800 bg-amber-950/40 p-3">
+                <div
+                  key={item.id}
+                  role={wallboardDisplayMode ? undefined : 'button'}
+                  tabIndex={wallboardDisplayMode ? undefined : 0}
+                  aria-label={wallboardDisplayMode ? undefined : `Open ${item.project.customer}${item.scope ? ` ${item.scope.type} scope` : ' project'}`}
+                  onClick={wallboardDisplayMode ? undefined : () => openAlertItem({ project: item.project, scope: item.scope }, item.label)}
+                  onKeyDown={wallboardDisplayMode ? undefined : (event) => handleActivationKey(event, () => openAlertItem({ project: item.project, scope: item.scope }, item.label))}
+                  className={`rounded-lg border border-amber-800 bg-amber-950/40 p-3 ${
+                    wallboardDisplayMode ? '' : 'cursor-pointer transition-colors hover:border-amber-500 hover:bg-amber-950/70 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-slate-900'
+                  }`}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h4 className="text-lg font-black text-amber-100">{item.project.customer}{item.scope ? ` / ${item.scope.type}` : ''}</h4>
@@ -2059,11 +2279,34 @@ export default function MLBDashboard() {
             </label>
             <label data-help-id="global-period-filter" className="text-sm font-semibold text-slate-600">
               Period
-              <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)} className="ml-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm">
+              <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)} title={periodLabel} className="ml-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm">
                 {PERIODS.map((period) => <option key={period} value={period}>{period}</option>)}
               </select>
               <Help id="global-period-filter" />
             </label>
+            {periodFilter === 'Custom' && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600" data-help-id="global-period-filter">
+                <label>
+                  Start
+                  <input
+                    type="date"
+                    value={customPeriodStart}
+                    onChange={(event) => setCustomPeriodStart(event.target.value)}
+                    className="ml-2 rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+                  />
+                </label>
+                <label>
+                  End
+                  <input
+                    type="date"
+                    value={customPeriodEnd}
+                    onChange={(event) => setCustomPeriodEnd(event.target.value)}
+                    className="ml-2 rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+                  />
+                </label>
+                {!customPeriodStart && !customPeriodEnd && <span className="text-slate-500">Select a start and/or end date to narrow results.</span>}
+              </div>
+            )}
             <div className="relative">
               <button
                 type="button"
@@ -2104,7 +2347,7 @@ export default function MLBDashboard() {
               )}
             </div>
             <Help id="global-admin-menu" />
-            <button data-help-id="global-new-project" type="button" onClick={() => setSelectedProject(emptyProject())} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
+            <button data-help-id="global-new-project" type="button" onClick={() => openProjectFile(emptyProject(), { initialTab: 'overview' })} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
               <Plus size={16} className="mr-2 inline" /> New Project
             </button>
             <Help id="global-new-project" />
@@ -2176,10 +2419,13 @@ export default function MLBDashboard() {
         {currentView === VIEWS.WALLBOARD && <TVWallboardView />}
       </main>
 
-      {selectedProject && (
+      {projectModalState && (
         <ProjectModal
-          project={selectedProject.customer || selectedProject.id ? selectedProject : null}
-          onClose={() => setSelectedProject(null)}
+          project={projectModalState.project?.customer || projectModalState.project?.id ? projectModalState.project : null}
+          initialTab={projectModalState.initialTab}
+          initialScopeId={projectModalState.initialScopeId}
+          focusArea={projectModalState.focusArea}
+          onClose={() => setProjectModalState(null)}
           onSave={saveProject}
           helpIconsEnabled={showHelpIcons}
           onOpenHelpTopic={openHelpTopic}
