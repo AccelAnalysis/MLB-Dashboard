@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -10,6 +10,7 @@ import {
   ClipboardList,
   Clock,
   DollarSign,
+  Download,
   FileText,
   LayoutDashboard,
   ListChecks,
@@ -23,10 +24,12 @@ import {
   Ruler,
   Trash2,
   TrendingUp,
+  Upload,
   User,
   Wrench,
   X,
 } from 'lucide-react';
+import { exportProjectsJson, importProjectsJson, loadProjects, resetProjects, saveProjects } from './services/projectStorage';
 
 const toISODate = (date) => date.toISOString().split('T')[0];
 const todayISO = () => toISODate(new Date());
@@ -233,6 +236,18 @@ const WALLBOARD_COLUMNS = [
   'Collection / Closeout',
 ];
 
+const UI_STORAGE_KEY = 'mlb-dashboard-ui-v1';
+
+const VIEW_QUERY_MAP = {
+  wallboard: VIEWS.WALLBOARD,
+  book: VIEWS.BOOK,
+  sales: VIEWS.SALES,
+  bottlenecks: VIEWS.BOTTLENECKS,
+  center: VIEWS.CENTER,
+  measure: VIEWS.MEASURE,
+  critical: VIEWS.CRITICAL,
+};
+
 const WHITEBOARD_STATUS_KEY = [
   { label: 'Measure date', field: 'measureCompleted', fallback: 'measureRequested', className: 'bg-purple-100 text-purple-800 border-purple-300' },
   { label: 'Order date', field: 'dateOrdered', className: 'bg-teal-100 text-teal-800 border-teal-300' },
@@ -380,6 +395,24 @@ const getWallboardColumn = (project, scope) => {
   if (scope.materialListReceived && !scope.dateOrdered) return 'Ready to Order';
   if (scope.measurer || scope.measureRequested || scope.measureCompleted) return 'Measure / List Needed';
   return 'Needs Measurer';
+};
+
+const csvEscape = (value) => {
+  const stringValue = value === null || value === undefined ? '' : String(value);
+  return `"${stringValue.replaceAll('"', '""')}"`;
+};
+
+const downloadCsv = (filename, rows) => {
+  const csv = rows.map((row) => row.map(csvEscape).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 };
 
 const isInPeriod = (dateStr, period) => {
@@ -852,16 +885,45 @@ const ProjectModal = ({ project, onClose, onSave }) => {
 };
 
 export default function MLBDashboard() {
-  const [projects, setProjects] = useState(initialProjects);
+  const fileInputRef = useRef(null);
+  const [projects, setProjects] = useState(() => loadProjects(initialProjects));
   const [currentView, setCurrentView] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get('view') === 'wallboard' ? VIEWS.WALLBOARD : VIEWS.CENTER;
+    const viewParam = params.get('view');
+    if (VIEW_QUERY_MAP[viewParam]) return VIEW_QUERY_MAP[viewParam];
+    try {
+      const saved = JSON.parse(localStorage.getItem(UI_STORAGE_KEY) || '{}');
+      return Object.values(VIEWS).includes(saved.currentView) ? saved.currentView : VIEWS.CENTER;
+    } catch {
+      return VIEWS.CENTER;
+    }
   });
-  const [regionFilter, setRegionFilter] = useState('All');
-  const [periodFilter, setPeriodFilter] = useState('YTD');
+  const [regionFilter, setRegionFilter] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(UI_STORAGE_KEY) || '{}');
+      return REGIONS.includes(saved.regionFilter) ? saved.regionFilter : 'All';
+    } catch {
+      return 'All';
+    }
+  });
+  const [periodFilter, setPeriodFilter] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(UI_STORAGE_KEY) || '{}');
+      return PERIODS.includes(saved.periodFilter) ? saved.periodFilter : 'YTD';
+    } catch {
+      return 'YTD';
+    }
+  });
   const [meetingMode, setMeetingMode] = useState(false);
   const [wallboardDisplayMode, setWallboardDisplayMode] = useState(() => new URLSearchParams(window.location.search).get('display') === '1');
-  const [wallboardMode, setWallboardMode] = useState('production');
+  const [wallboardMode, setWallboardMode] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(UI_STORAGE_KEY) || '{}');
+      return ['production', 'trade'].includes(saved.wallboardMode) ? saved.wallboardMode : 'production';
+    } catch {
+      return 'production';
+    }
+  });
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [selectedProject, setSelectedProject] = useState(null);
   const [expandedProjects, setExpandedProjects] = useState(() => new Set(['P-1001']));
@@ -870,6 +932,14 @@ export default function MLBDashboard() {
     const timer = window.setInterval(() => setLastUpdated(new Date()), 60000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    saveProjects(projects);
+  }, [projects]);
+
+  useEffect(() => {
+    localStorage.setItem(UI_STORAGE_KEY, JSON.stringify({ currentView, wallboardMode, regionFilter, periodFilter }));
+  }, [currentView, wallboardMode, regionFilter, periodFilter]);
 
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => {
@@ -1101,6 +1171,107 @@ export default function MLBDashboard() {
       return exists ? current.map((project) => (project.id === updatedProject.id ? updatedProject : project)) : [updatedProject, ...current];
     });
     setSelectedProject(null);
+  };
+
+  const handleResetDemoData = () => {
+    if (!window.confirm('Reset all local project data back to the demo dataset? This cannot be undone.')) return;
+    resetProjects();
+    setProjects(loadProjects(initialProjects));
+  };
+
+  const handleImportBackup = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    try {
+      const importedProjects = await importProjectsJson(file);
+      if (!window.confirm(`Import ${importedProjects.length} projects and replace current local data?`)) return;
+      setProjects(importedProjects);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Unable to import backup JSON.');
+    }
+  };
+
+  const exportCriticalPathCsv = () => {
+    const headers = [
+      'Project ID',
+      'Scope ID',
+      'Date Sold',
+      'Customer',
+      'City',
+      'Region',
+      'Phone',
+      'Salesperson',
+      'Lead Source',
+      'Payment Type',
+      'Original Amount',
+      'Revised Amount',
+      'Deposit',
+      'Scope Type',
+      'Measurer',
+      'Measure Requested',
+      'Measure Completed',
+      'Material List Received',
+      'Date Ordered',
+      'Vendor',
+      'Material ETA',
+      'Materials In',
+      'Scheduled Install',
+      'Crew/Sub',
+      'Completion Date',
+      'Collected/Funded',
+      'Thank-you Sent',
+      'Cancelled',
+      'Cancellation Date',
+      'Cancellation Reason',
+      'Notes',
+      'Scope Notes',
+      'Specs',
+      'Alerts',
+    ];
+
+    const rows = bookRows.map(({ project, scope }) => {
+      const alerts = scope ? getScopeAlerts(project, scope) : getProjectAlerts(project);
+      return [
+        project.id,
+        scope?.id || '',
+        project.dateSold || '',
+        project.customer || '',
+        project.city || '',
+        project.region || '',
+        project.phone || '',
+        project.salesperson || '',
+        project.leadSource || '',
+        project.paymentType || '',
+        project.originalAmount || '',
+        getRevisedAmount(project),
+        project.deposit || '',
+        scope?.type || '',
+        scope?.measurer || '',
+        scope?.measureRequested || '',
+        scope?.measureCompleted || '',
+        scope?.materialListReceived || '',
+        scope?.dateOrdered || '',
+        scope?.vendor || '',
+        scope?.materialETA || '',
+        scope?.materialsIn || '',
+        scope?.scheduledInstallDate || '',
+        scope?.crew || '',
+        scope?.completionDate || '',
+        project.collected ? 'Yes' : 'No',
+        project.thankYouSent ? 'Yes' : 'No',
+        project.cancelled ? 'Yes' : 'No',
+        project.cancellationDate || '',
+        project.cancellationReason || '',
+        project.notes || '',
+        scope?.notes || '',
+        scope ? Object.entries(scope.specs || {}).map(([key, value]) => `${key}: ${value}`).join(' | ') : '',
+        alerts.map((alert) => `${alert.type} (${alert.daysStuck}d)`).join(' | '),
+      ];
+    });
+
+    downloadCsv(`mlb-critical-path-book-${todayISO()}.csv`, [headers, ...rows]);
   };
 
   const toggleWallboardDisplayMode = () => {
@@ -1388,13 +1559,21 @@ export default function MLBDashboard() {
 
   const CriticalPathBookView = () => (
     <div className="space-y-4 printable-book">
+      <div className="hidden print:block">
+        <h1 className="text-2xl font-black">Major League Builders Critical Path Book</h1>
+        <p className="mt-1 text-sm">Printed {new Date().toLocaleDateString('en-US')} | Region: {regionFilter} | Period: {periodFilter}</p>
+        <div className="mt-3">
+          <WhiteboardStatusKey />
+        </div>
+      </div>
       <div className="flex flex-col justify-between gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center">
         <div>
           <h2 className="flex items-center text-xl font-black text-slate-900"><BookOpen size={22} className="mr-2 text-blue-600" /> Critical Path Book</h2>
           <p className="text-sm text-slate-500">Book-style one-row-per-scope replacement for the manual production ledger.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 print:hidden">
           <WhiteboardStatusKey />
+          <button type="button" onClick={exportCriticalPathCsv} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"><Download size={16} className="mr-2 inline" /> Export CSV</button>
           <button type="button" onClick={() => window.print()} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white"><Printer size={16} className="mr-2 inline" /> Print Book</button>
         </div>
       </div>
@@ -1660,9 +1839,14 @@ export default function MLBDashboard() {
               <h1 className="text-2xl font-black tracking-tight text-slate-950">Major League Builders Operator View</h1>
             </div>
             <p className="mt-1 text-sm text-slate-500">Project files, scope-level critical path, bottlenecks, sales metrics, book replacement, and TV wallboard.</p>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs font-bold">
+              <span className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-blue-700">Local demo storage active</span>
+              <span className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700">Prototype data — not yet connected to JobNimbus or QuickBooks.</span>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleImportBackup} className="hidden" />
             <label className="text-sm font-semibold text-slate-600">
               Region
               <select value={regionFilter} onChange={(event) => setRegionFilter(event.target.value)} className="ml-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm">
@@ -1677,6 +1861,15 @@ export default function MLBDashboard() {
             </label>
             <button type="button" onClick={() => setMeetingMode((value) => !value)} className={`rounded-lg px-4 py-2 text-sm font-bold shadow-sm ${meetingMode ? 'bg-blue-600 text-white' : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`}>
               <Presentation size={16} className="mr-2 inline" /> Meeting Mode
+            </button>
+            <button type="button" onClick={() => exportProjectsJson(projects)} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+              <Download size={16} className="mr-2 inline" /> Export Backup JSON
+            </button>
+            <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+              <Upload size={16} className="mr-2 inline" /> Import Backup JSON
+            </button>
+            <button type="button" onClick={handleResetDemoData} className="rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-bold text-red-700 shadow-sm hover:bg-red-50">
+              Reset Demo Data
             </button>
             <button type="button" onClick={() => setSelectedProject(emptyProject())} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
               <Plus size={16} className="mr-2 inline" /> New Project
@@ -1722,12 +1915,17 @@ export default function MLBDashboard() {
 
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
+          @page { size: landscape; margin: 0.35in; }
           body * { visibility: hidden; }
           #printable-area, #printable-area * { visibility: visible; }
           #printable-area { position: absolute; left: 0; top: 0; width: 100%; }
           .printable-book, .printable-book * { visibility: visible; }
-          .printable-book { position: absolute; left: 0; top: 0; width: 100%; background: white; }
-          .printable-book button { display: none !important; }
+          .printable-book { position: absolute; left: 0; top: 0; width: 100%; background: white; color: black; }
+          .printable-book button, .printable-book .print\\:hidden { display: none !important; }
+          .printable-book table { border-collapse: collapse; font-size: 9px; }
+          .printable-book tr { break-inside: avoid; page-break-inside: avoid; }
+          .printable-book th, .printable-book td { border: 1px solid #cbd5e1; padding: 4px; }
+          .printable-book thead { display: table-header-group; }
         }
       ` }} />
     </div>
