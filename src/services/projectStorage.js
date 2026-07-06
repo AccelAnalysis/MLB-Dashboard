@@ -12,35 +12,17 @@ const downloadTextFile = (filename, content, type) => {
   URL.revokeObjectURL(url);
 };
 
-const normalizeChangeOrder = (changeOrder) => ({
-  ...changeOrder,
-  id: changeOrder.id || Date.now(),
-  date: changeOrder.date || '',
-  description: changeOrder.description || '',
-  reason: changeOrder.reason || changeOrder.description || '',
-  amount: changeOrder.amount ?? '',
-  status: changeOrder.status || 'approved',
-  scopeId: changeOrder.scopeId || '',
-});
-
-const normalizeScope = (scope) => ({
-  ...scope,
-  measureRequested: scope.measureRequested || '',
-  specs: scope.specs && typeof scope.specs === 'object' ? scope.specs : {},
-  initialAmount: scope.initialAmount ?? '',
-  finalAmount: scope.finalAmount ?? '',
-  changeOrderNotes: scope.changeOrderNotes || '',
-});
-
 const ensureProjectShape = (project) => ({
   ...project,
-  finalAmount: project.finalAmount ?? '',
-  financialCloseDate: project.financialCloseDate || '',
-  financialNotes: project.financialNotes || '',
   cancellationDate: project.cancellationDate || '',
   cancellationReason: project.cancellationReason || '',
-  changeOrders: Array.isArray(project.changeOrders) ? project.changeOrders.map(normalizeChangeOrder) : [],
-  scopes: Array.isArray(project.scopes) ? project.scopes.map(normalizeScope) : [],
+  scopes: Array.isArray(project.scopes)
+    ? project.scopes.map((scope) => ({
+        ...scope,
+        measureRequested: scope.measureRequested || '',
+        specs: scope.specs && typeof scope.specs === 'object' ? scope.specs : {},
+      }))
+    : [],
 });
 
 export const normalizeProjects = (projects) => {
