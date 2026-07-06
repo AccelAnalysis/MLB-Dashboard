@@ -1,3 +1,3 @@
 export default function MinimalJsx() {
-  return <div>Hi</div>;
+  return <div>Hello</div>;
 }
