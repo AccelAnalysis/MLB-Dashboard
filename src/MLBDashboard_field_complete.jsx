@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  ClipboardList,
   Download,
   FileText,
   LayoutDashboard,
@@ -20,7 +19,6 @@ import {
   Printer,
   Ruler,
   Trash2,
-  TrendingUp,
   Upload,
   User,
   Wrench,
@@ -243,6 +241,116 @@ const VIEW_QUERY_MAP = {
   center: VIEWS.CENTER,
   measure: VIEWS.MEASURE,
   critical: VIEWS.CRITICAL,
+};
+
+const MAIN_AREAS = {
+  PRODUCTION: 'production',
+  BOTTLENECKS: 'bottlenecks',
+  SALES: 'sales',
+  WALLBOARD: 'wallboard',
+};
+
+const PRODUCTION_MODES = {
+  CUSTOMER: 'customer',
+  BOOK: 'book',
+  MEETING: 'meeting',
+};
+
+const BOTTLENECK_MODES = {
+  ALL: 'all',
+  MEASUREMENT: 'measurement',
+};
+
+const MAIN_NAV_ITEMS = [
+  { id: MAIN_AREAS.PRODUCTION, label: 'Production' },
+  { id: MAIN_AREAS.BOTTLENECKS, label: 'Bottlenecks' },
+  { id: MAIN_AREAS.SALES, label: 'Sales' },
+  { id: MAIN_AREAS.WALLBOARD, label: 'TV Wallboard' },
+];
+
+const PRODUCTION_NAV_ITEMS = [
+  { id: PRODUCTION_MODES.CUSTOMER, label: 'Customer' },
+  { id: PRODUCTION_MODES.BOOK, label: 'Book' },
+  { id: PRODUCTION_MODES.MEETING, label: 'Meeting' },
+];
+
+const BOTTLENECK_NAV_ITEMS = [
+  { id: BOTTLENECK_MODES.ALL, label: 'All' },
+  { id: BOTTLENECK_MODES.MEASUREMENT, label: 'Measurement' },
+];
+
+const viewToNavigation = (view) => {
+  switch (view) {
+    case VIEWS.BOOK:
+      return { mainArea: MAIN_AREAS.PRODUCTION, productionMode: PRODUCTION_MODES.BOOK, bottleneckMode: BOTTLENECK_MODES.ALL };
+    case VIEWS.CRITICAL:
+      return { mainArea: MAIN_AREAS.PRODUCTION, productionMode: PRODUCTION_MODES.MEETING, bottleneckMode: BOTTLENECK_MODES.ALL };
+    case VIEWS.MEASURE:
+      return { mainArea: MAIN_AREAS.BOTTLENECKS, productionMode: PRODUCTION_MODES.CUSTOMER, bottleneckMode: BOTTLENECK_MODES.MEASUREMENT };
+    case VIEWS.BOTTLENECKS:
+      return { mainArea: MAIN_AREAS.BOTTLENECKS, productionMode: PRODUCTION_MODES.CUSTOMER, bottleneckMode: BOTTLENECK_MODES.ALL };
+    case VIEWS.SALES:
+      return { mainArea: MAIN_AREAS.SALES, productionMode: PRODUCTION_MODES.CUSTOMER, bottleneckMode: BOTTLENECK_MODES.ALL };
+    case VIEWS.WALLBOARD:
+      return { mainArea: MAIN_AREAS.WALLBOARD, productionMode: PRODUCTION_MODES.CUSTOMER, bottleneckMode: BOTTLENECK_MODES.ALL };
+    case VIEWS.CENTER:
+    default:
+      return { mainArea: MAIN_AREAS.PRODUCTION, productionMode: PRODUCTION_MODES.CUSTOMER, bottleneckMode: BOTTLENECK_MODES.ALL };
+  }
+};
+
+const navigationToView = (mainArea, productionMode, bottleneckMode) => {
+  if (mainArea === MAIN_AREAS.PRODUCTION) {
+    if (productionMode === PRODUCTION_MODES.BOOK) return VIEWS.BOOK;
+    if (productionMode === PRODUCTION_MODES.MEETING) return VIEWS.CRITICAL;
+    return VIEWS.CENTER;
+  }
+
+  if (mainArea === MAIN_AREAS.BOTTLENECKS) {
+    return bottleneckMode === BOTTLENECK_MODES.MEASUREMENT ? VIEWS.MEASURE : VIEWS.BOTTLENECKS;
+  }
+
+  if (mainArea === MAIN_AREAS.SALES) return VIEWS.SALES;
+  if (mainArea === MAIN_AREAS.WALLBOARD) return VIEWS.WALLBOARD;
+  return VIEWS.CENTER;
+};
+
+const getInitialNavigation = () => {
+  const params = new URLSearchParams(window.location.search);
+  const areaParam = params.get('area');
+  const modeParam = params.get('mode');
+  const filterParam = params.get('filter');
+  const viewParam = params.get('view');
+
+  if (VIEW_QUERY_MAP[viewParam]) {
+    return viewToNavigation(VIEW_QUERY_MAP[viewParam]);
+  }
+
+  if (Object.values(MAIN_AREAS).includes(areaParam)) {
+    return {
+      mainArea: areaParam,
+      productionMode: Object.values(PRODUCTION_MODES).includes(modeParam) ? modeParam : PRODUCTION_MODES.CUSTOMER,
+      bottleneckMode: Object.values(BOTTLENECK_MODES).includes(filterParam) ? filterParam : BOTTLENECK_MODES.ALL,
+    };
+  }
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(UI_STORAGE_KEY) || '{}');
+    if (Object.values(MAIN_AREAS).includes(saved.mainArea)) {
+      return {
+        mainArea: saved.mainArea,
+        productionMode: Object.values(PRODUCTION_MODES).includes(saved.productionMode) ? saved.productionMode : PRODUCTION_MODES.CUSTOMER,
+        bottleneckMode: Object.values(BOTTLENECK_MODES).includes(saved.bottleneckMode) ? saved.bottleneckMode : BOTTLENECK_MODES.ALL,
+      };
+    }
+    if (Object.values(VIEWS).includes(saved.currentView)) {
+      return viewToNavigation(saved.currentView);
+    }
+  } catch {
+    return viewToNavigation(VIEWS.CENTER);
+  }
+
+  return viewToNavigation(VIEWS.CENTER);
 };
 
 const WHITEBOARD_STATUS_KEY = [
@@ -879,17 +987,10 @@ const ProjectModal = ({ project, onClose, onSave }) => {
 export default function MLBDashboard() {
   const fileInputRef = useRef(null);
   const [projects, setProjects] = useState(() => loadProjects(initialProjects));
-  const [currentView, setCurrentView] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    const viewParam = params.get('view');
-    if (VIEW_QUERY_MAP[viewParam]) return VIEW_QUERY_MAP[viewParam];
-    try {
-      const saved = JSON.parse(localStorage.getItem(UI_STORAGE_KEY) || '{}');
-      return Object.values(VIEWS).includes(saved.currentView) ? saved.currentView : VIEWS.CENTER;
-    } catch {
-      return VIEWS.CENTER;
-    }
-  });
+  const [initialNavigation] = useState(() => getInitialNavigation());
+  const [mainArea, setMainArea] = useState(initialNavigation.mainArea);
+  const [productionMode, setProductionMode] = useState(initialNavigation.productionMode);
+  const [bottleneckMode, setBottleneckMode] = useState(initialNavigation.bottleneckMode);
   const [regionFilter, setRegionFilter] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(UI_STORAGE_KEY) || '{}');
@@ -919,6 +1020,7 @@ export default function MLBDashboard() {
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [selectedProject, setSelectedProject] = useState(null);
   const [expandedProjects, setExpandedProjects] = useState(() => new Set(['P-1001']));
+  const currentView = navigationToView(mainArea, productionMode, bottleneckMode);
 
   useEffect(() => {
     const timer = window.setInterval(() => setLastUpdated(new Date()), 60000);
@@ -930,8 +1032,33 @@ export default function MLBDashboard() {
   }, [projects]);
 
   useEffect(() => {
-    localStorage.setItem(UI_STORAGE_KEY, JSON.stringify({ currentView, wallboardMode, regionFilter, periodFilter }));
-  }, [currentView, wallboardMode, regionFilter, periodFilter]);
+    localStorage.setItem(UI_STORAGE_KEY, JSON.stringify({ currentView, mainArea, productionMode, bottleneckMode, wallboardMode, regionFilter, periodFilter }));
+  }, [currentView, mainArea, productionMode, bottleneckMode, wallboardMode, regionFilter, periodFilter]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    params.delete('view');
+    params.set('area', mainArea);
+    params.delete('mode');
+    params.delete('filter');
+
+    if (mainArea === MAIN_AREAS.PRODUCTION) {
+      params.set('mode', productionMode);
+    }
+
+    if (mainArea === MAIN_AREAS.BOTTLENECKS) {
+      params.set('filter', bottleneckMode);
+    }
+
+    if (wallboardDisplayMode) {
+      params.set('display', '1');
+    } else {
+      params.delete('display');
+    }
+
+    const nextUrl = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
+    window.history.replaceState(null, '', nextUrl);
+  }, [mainArea, productionMode, bottleneckMode, wallboardDisplayMode]);
 
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => {
@@ -1575,6 +1702,7 @@ export default function MLBDashboard() {
           <table className="min-w-[1500px] w-full text-left text-xs">
             <thead className="bg-slate-100 text-[11px] font-black uppercase tracking-wide text-slate-600">
               <tr>
+                <th className="border-b border-slate-200 px-3 py-3 print:hidden">Action</th>
                 {['Date Sold', 'Customer', 'City', 'Scope', 'Salesperson', 'Amount', 'Measure Req.', 'Measure Date', 'Order Date', 'Material ETA', 'Materials IN', 'Scheduled', 'Crew/Sub', 'Completion', 'Collected', 'Notes'].map((heading) => (
                   <th key={heading} className="border-b border-slate-200 px-3 py-3">{heading}</th>
                 ))}
@@ -1584,7 +1712,16 @@ export default function MLBDashboard() {
               {bookRows.map(({ project, scope, id }) => {
                 const alerts = scope ? getScopeAlerts(project, scope) : getProjectAlerts(project);
                 return (
-                  <tr key={id} className={`${alerts.length ? 'bg-red-50/50' : 'hover:bg-slate-50'} align-top`}>
+                  <tr key={id} className={`${alerts.length ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-slate-50'} align-top transition-colors`}>
+                    <td className="px-3 py-3 print:hidden">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedProject(project)}
+                        className="whitespace-nowrap rounded bg-slate-900 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                      >
+                        Open File
+                      </button>
+                    </td>
                     <td className="px-3 py-3 font-semibold text-slate-700">{formatDate(project.dateSold)}</td>
                     <td className="px-3 py-3 font-black text-slate-900">{project.customer}{project.cancelled && <div className="mt-1 text-[10px] font-black uppercase text-red-600">Cancelled {formatDate(project.cancellationDate)}</div>}</td>
                     <td className="px-3 py-3">{project.city}</td>
@@ -1811,16 +1948,6 @@ export default function MLBDashboard() {
     );
   };
 
-  const tabs = [
-    { id: VIEWS.CENTER, label: 'Project Center', icon: <ClipboardList size={18} /> },
-    { id: VIEWS.MEASURE, label: 'Measurement Queue', icon: <Ruler size={18} /> },
-    { id: VIEWS.BOTTLENECKS, label: 'Bottlenecks', icon: <AlertTriangle size={18} /> },
-    { id: VIEWS.SALES, label: 'Sales Metrics', icon: <TrendingUp size={18} /> },
-    { id: VIEWS.CRITICAL, label: 'Critical Path Sync', icon: <Presentation size={18} /> },
-    { id: VIEWS.BOOK, label: 'Critical Path Book', icon: <BookOpen size={18} /> },
-    { id: VIEWS.WALLBOARD, label: 'TV Wallboard', icon: <Monitor size={18} /> },
-  ];
-
   return (
     <div className="min-h-screen bg-slate-100 font-sans text-slate-900">
       <header className={`${wallboardDisplayMode && currentView === VIEWS.WALLBOARD ? 'hidden' : 'sticky'} top-0 z-30 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur`}>
@@ -1880,21 +2007,53 @@ export default function MLBDashboard() {
           </div>
         </div>
 
-        <nav className="mx-auto flex w-full max-w-[1920px] gap-2 overflow-x-auto px-4 pb-3">
-          {tabs.map((tab) => (
+        <nav className="mx-auto flex w-full max-w-[1920px] gap-2 overflow-x-auto px-4 pb-2" aria-label="Main navigation">
+          {MAIN_NAV_ITEMS.map((item) => (
             <button
-              key={tab.id}
+              key={item.id}
               type="button"
-              onClick={() => setCurrentView(tab.id)}
-              className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-bold transition-colors ${
-                currentView === tab.id ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              onClick={() => setMainArea(item.id)}
+              className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-bold transition-colors ${
+                mainArea === item.id ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
-              {tab.icon}
-              {tab.label}
+              {item.label}
             </button>
           ))}
         </nav>
+
+        {(mainArea === MAIN_AREAS.PRODUCTION || mainArea === MAIN_AREAS.BOTTLENECKS) && (
+          <div className="mx-auto flex w-full max-w-[1920px] gap-2 overflow-x-auto px-4 pb-3" aria-label={mainArea === MAIN_AREAS.PRODUCTION ? 'Production views' : 'Bottleneck filters'}>
+            {mainArea === MAIN_AREAS.PRODUCTION && PRODUCTION_NAV_ITEMS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setProductionMode(item.id)}
+                className={`whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-black uppercase tracking-wide transition-colors ${
+                  productionMode === item.id
+                    ? 'border-blue-600 bg-blue-50 text-blue-700'
+                    : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-900'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+            {mainArea === MAIN_AREAS.BOTTLENECKS && BOTTLENECK_NAV_ITEMS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setBottleneckMode(item.id)}
+                className={`whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-black uppercase tracking-wide transition-colors ${
+                  bottleneckMode === item.id
+                    ? 'border-blue-600 bg-blue-50 text-blue-700'
+                    : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-900'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
 
       <main className={`${currentView === VIEWS.WALLBOARD ? 'mx-auto max-w-[1920px] px-3 py-3' : 'mx-auto w-full max-w-[1920px] space-y-6 px-4 py-6'}`}>
