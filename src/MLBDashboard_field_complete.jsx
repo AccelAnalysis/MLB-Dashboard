@@ -25,6 +25,10 @@ import {
   X,
 } from 'lucide-react';
 import { exportProjectsJson, importProjectsJson, loadProjects, resetProjects, saveProjects } from './services/projectStorage';
+import HelpCenterDrawer from './help/HelpCenterDrawer';
+import GuidedWalkthrough from './help/GuidedWalkthrough';
+import HelpIcon from './help/HelpIcon';
+import { HELP_STORAGE_KEY, helpById } from './help/helpContent';
 
 const toISODate = (date) => date.toISOString().split('T')[0];
 const todayISO = () => toISODate(new Date());
@@ -541,16 +545,16 @@ const Badge = ({ children, className = '' }) => (
   </span>
 );
 
-const MetricCard = ({ label, value, detail, tone = 'bg-white' }) => (
-  <div className={`${tone} rounded-lg border border-slate-200 p-5 shadow-sm`}>
+const MetricCard = ({ label, value, detail, tone = 'bg-white', helpId, helpIcon }) => (
+  <div data-help-id={helpId} className={`${tone} rounded-lg border border-slate-200 p-5 shadow-sm`}>
     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-    <h3 className="mt-2 text-3xl font-bold text-slate-950">{value}</h3>
+    <h3 className="mt-2 text-3xl font-bold text-slate-950">{value}{helpIcon}</h3>
     {detail && <p className="mt-1 text-sm text-slate-500">{detail}</p>}
   </div>
 );
 
-const WhiteboardStatusKey = ({ dark = false }) => (
-  <div className="flex flex-wrap gap-2 text-xs font-black uppercase tracking-wide">
+const WhiteboardStatusKey = ({ dark = false, helpId }) => (
+  <div data-help-id={helpId} className="flex flex-wrap gap-2 text-xs font-black uppercase tracking-wide">
     {WHITEBOARD_STATUS_KEY.map((item) => (
       <span key={item.label} className={`rounded border px-2 py-1 ${item.className}`}>{item.label}</span>
     ))}
@@ -558,11 +562,12 @@ const WhiteboardStatusKey = ({ dark = false }) => (
   </div>
 );
 
-const ProjectModal = ({ project, onClose, onSave }) => {
+const ProjectModal = ({ project, onClose, onSave, helpIconsEnabled = false, onOpenHelpTopic = () => {} }) => {
   const [formData, setFormData] = useState(project || emptyProject());
   const [activeTab, setActiveTab] = useState('overview');
   const [editingScope, setEditingScope] = useState(null);
   const [newChangeOrder, setNewChangeOrder] = useState({ date: todayISO(), description: '', amount: '' });
+  const Help = ({ id }) => <HelpIcon item={helpById[id]} enabled={helpIconsEnabled} onOpenTopic={onOpenHelpTopic} />;
 
   const updateField = (field, value) => setFormData((prev) => ({ ...prev, [field]: value }));
   const updateIntake = (field, value) => setFormData((prev) => ({ ...prev, intake: { ...prev.intake, [field]: value } }));
@@ -676,11 +681,11 @@ const ProjectModal = ({ project, onClose, onSave }) => {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" data-help-id="modal-project-file">
       <div className="flex max-h-[95vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
           <div>
-            <h2 className="text-2xl font-black text-slate-800">{project ? `Project: ${formData.customer || formData.id}` : 'New Customer Project'}</h2>
+            <h2 className="text-2xl font-black text-slate-800">{project ? `Project: ${formData.customer || formData.id}` : 'New Customer Project'}<Help id="modal-project-file" /></h2>
             <p className="text-sm font-medium text-slate-500">ID: {formData.id} {formData.city ? `| ${formData.city}` : ''}</p>
           </div>
           <div className="flex gap-2">
@@ -704,6 +709,7 @@ const ProjectModal = ({ project, onClose, onSave }) => {
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
+              data-help-id={tab.id === 'overview' ? 'modal-overview-tab' : tab.id === 'scopes' ? 'modal-scopes-tab' : tab.id === 'financials' ? 'modal-financials-tab' : undefined}
               className={`whitespace-nowrap border-b-2 py-3 text-sm font-bold transition-colors ${
                 activeTab === tab.id ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
@@ -736,8 +742,8 @@ const ProjectModal = ({ project, onClose, onSave }) => {
                     <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Lead Source<input type="text" value={formData.leadSource} onChange={(event) => updateField('leadSource', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 p-2 text-sm text-slate-900" /></label>
                     <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Payment<select value={formData.paymentType} onChange={(event) => updateField('paymentType', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 p-2 text-sm text-slate-900"><option>Finance</option><option>Cash</option><option>Check</option><option>Card</option><option>Other</option></select></label>
                   </div>
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-bold text-slate-700">Permit Tracking</h4>
+                  <div className="space-y-3" data-help-id="modal-permit-tracking">
+                    <h4 className="text-sm font-bold text-slate-700">Permit Tracking<Help id="modal-permit-tracking" /></h4>
                     <label className="flex items-center gap-2 text-sm font-medium text-slate-700"><input type="checkbox" checked={formData.permits.required} onChange={(event) => updatePermit('required', event.target.checked)} className="rounded border-slate-300 text-blue-600" /> Permit Required for Project</label>
                     {formData.permits.required && (
                       <div className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
@@ -752,8 +758,8 @@ const ProjectModal = ({ project, onClose, onSave }) => {
               </div>
 
               <div className="space-y-6">
-                <section className="rounded-lg border border-blue-100 bg-blue-50 p-5 shadow-sm">
-                  <h3 className="mb-4 flex items-center font-bold text-blue-900"><CheckCircle2 size={18} className="mr-2 text-blue-600" /> Intake Checklist</h3>
+                <section className="rounded-lg border border-blue-100 bg-blue-50 p-5 shadow-sm" data-help-id="modal-intake-checklist">
+                  <h3 className="mb-4 flex items-center font-bold text-blue-900"><CheckCircle2 size={18} className="mr-2 text-blue-600" /> Intake Checklist<Help id="modal-intake-checklist" /></h3>
                   <div className="space-y-2">
                     {[
                       { key: 'contractReceived', label: 'Contract Received' },
@@ -772,9 +778,9 @@ const ProjectModal = ({ project, onClose, onSave }) => {
                 </section>
 
                 <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                  <h3 className="mb-2 font-bold text-slate-800">Meeting Notes</h3>
+                  <h3 className="mb-2 font-bold text-slate-800" data-help-id="modal-meeting-notes">Meeting Notes<Help id="modal-meeting-notes" /></h3>
                   <textarea value={formData.decisionNeeded} onChange={(event) => updateField('decisionNeeded', event.target.value)} placeholder="Decision needed for the weekly sync..." className="min-h-[80px] w-full rounded-md border border-slate-300 p-2 text-sm" />
-                  <h3 className="mb-2 mt-4 font-bold text-slate-800">General Notes</h3>
+                  <h3 className="mb-2 mt-4 font-bold text-slate-800" data-help-id="modal-general-notes">General Notes<Help id="modal-general-notes" /></h3>
                   <textarea value={formData.notes} onChange={(event) => updateField('notes', event.target.value)} placeholder="Customer, supplier, permit, or production notes..." className="min-h-[90px] w-full rounded-md border border-slate-300 p-2 text-sm" />
                 </section>
               </div>
@@ -783,9 +789,9 @@ const ProjectModal = ({ project, onClose, onSave }) => {
 
           {activeTab === 'scopes' && (
             <div className="space-y-4">
-              <div className="flex flex-col justify-between gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center">
+              <div className="flex flex-col justify-between gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center" data-help-id="modal-scopes-tab">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-800">Project Work Scopes</h3>
+                  <h3 className="text-lg font-bold text-slate-800">Project Work Scopes<Help id="modal-scopes-tab" /></h3>
                   <p className="text-sm text-slate-500">Break this project down by trade or product, with its own measure, order, material, schedule, crew, and specs.</p>
                 </div>
                 <button type="button" onClick={() => setEditingScope(emptyScope())} className="flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800">
@@ -850,9 +856,9 @@ const ProjectModal = ({ project, onClose, onSave }) => {
                 </div>
               </div>
 
-              <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+              <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm" data-help-id="modal-financial-change-orders">
                 <div className="border-b border-slate-200 bg-slate-50 p-4">
-                  <h3 className="font-bold text-slate-800">Change Orders Ledger</h3>
+                  <h3 className="font-bold text-slate-800">Change Orders Ledger<Help id="modal-financial-change-orders" /></h3>
                 </div>
                 <div className="grid grid-cols-1 gap-3 border-b border-slate-100 p-4 md:grid-cols-[150px_1fr_140px_auto]">
                   <input type="date" value={newChangeOrder.date} onChange={(event) => setNewChangeOrder((prev) => ({ ...prev, date: event.target.value }))} className="rounded border border-slate-300 p-2 text-sm" />
@@ -877,8 +883,8 @@ const ProjectModal = ({ project, onClose, onSave }) => {
               </div>
 
               <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="flex flex-wrap gap-3">
-                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700"><input type="checkbox" checked={formData.collected} onChange={(event) => updateField('collected', event.target.checked)} /> Collected / Funded</label>
+                <div className="flex flex-wrap gap-3" data-help-id="modal-collected-funded">
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700"><input type="checkbox" checked={formData.collected} onChange={(event) => updateField('collected', event.target.checked)} /> Collected / Funded<Help id="modal-collected-funded" /></label>
                   <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700"><input type="checkbox" checked={formData.thankYouSent} onChange={(event) => updateField('thankYouSent', event.target.checked)} /> Thank-you sent</label>
                   <label className="flex items-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-700">
                     <input
@@ -893,7 +899,7 @@ const ProjectModal = ({ project, onClose, onSave }) => {
                   </label>
                 </div>
                 {formData.cancelled && (
-                  <div className="grid grid-cols-1 gap-4 rounded-lg border border-red-200 bg-red-50 p-4 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 rounded-lg border border-red-200 bg-red-50 p-4 sm:grid-cols-2" data-help-id="modal-cancellation-fields">
                     <label className="block text-xs font-bold uppercase tracking-wide text-red-700">Cancellation Date<input type="date" value={formData.cancellationDate || ''} onChange={(event) => updateField('cancellationDate', event.target.value)} className="mt-1 w-full rounded-md border border-red-200 p-2 text-sm text-slate-900" /></label>
                     <label className="block text-xs font-bold uppercase tracking-wide text-red-700 sm:col-span-2">Cancellation Reason<textarea value={formData.cancellationReason || ''} onChange={(event) => updateField('cancellationReason', event.target.value)} className="mt-1 min-h-[80px] w-full rounded-md border border-red-200 p-2 text-sm normal-case text-slate-900" /></label>
                   </div>
@@ -924,8 +930,8 @@ const ProjectModal = ({ project, onClose, onSave }) => {
                 <label className="block text-xs font-bold uppercase text-slate-500">Assigned Crew / Sub<input type="text" value={editingScope.crew || ''} onChange={(event) => setEditingScope({ ...editingScope, crew: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-sm" /></label>
               </div>
 
-              <section className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <h4 className="border-b border-slate-200 pb-2 font-bold text-slate-800">Measurement & Materials</h4>
+              <section className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4" data-help-id="modal-scope-measurement-fields">
+                <h4 className="border-b border-slate-200 pb-2 font-bold text-slate-800">Measurement & Materials<Help id="modal-scope-measurement-fields" /></h4>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <label className="block text-xs font-bold uppercase text-slate-500">Measurer<input type="text" value={editingScope.measurer || ''} onChange={(event) => setEditingScope({ ...editingScope, measurer: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-sm" /></label>
                   <label className="block text-xs font-bold uppercase text-slate-500">Measure Requested<input type="date" value={editingScope.measureRequested || ''} onChange={(event) => setEditingScope({ ...editingScope, measureRequested: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-sm" /></label>
@@ -937,8 +943,8 @@ const ProjectModal = ({ project, onClose, onSave }) => {
                 </div>
               </section>
 
-              <section className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <h4 className="border-b border-slate-200 pb-2 font-bold text-slate-800">Production Schedule</h4>
+              <section className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4" data-help-id="modal-scope-production-schedule">
+                <h4 className="border-b border-slate-200 pb-2 font-bold text-slate-800">Production Schedule<Help id="modal-scope-production-schedule" /></h4>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <label className="block text-xs font-bold uppercase text-slate-500">Materials In<input type="date" value={editingScope.materialsIn || ''} onChange={(event) => setEditingScope({ ...editingScope, materialsIn: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-sm" /></label>
                   <label className="block text-xs font-bold uppercase text-slate-500">Scheduled Install<input type="date" value={editingScope.scheduledInstallDate || ''} onChange={(event) => setEditingScope({ ...editingScope, scheduledInstallDate: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-sm" /></label>
@@ -946,9 +952,9 @@ const ProjectModal = ({ project, onClose, onSave }) => {
                 </div>
               </section>
 
-              <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+              <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4" data-help-id="modal-scope-work-order-specs">
                 <div className="flex items-center justify-between gap-3">
-                  <h4 className="font-bold text-slate-800">Work Order Specs</h4>
+                  <h4 className="font-bold text-slate-800">Work Order Specs<Help id="modal-scope-work-order-specs" /></h4>
                   <button type="button" onClick={addEditingSpec} className="rounded bg-slate-900 px-3 py-1.5 text-xs font-bold text-white"><Plus size={12} className="mr-1 inline" /> Add Spec</button>
                 </div>
                 {Object.entries(editingScope.specs || {}).length === 0 ? (
@@ -1008,6 +1014,32 @@ export default function MLBDashboard() {
     }
   });
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const [helpCenterOpen, setHelpCenterOpen] = useState(false);
+  const [activeHelpTopicId, setActiveHelpTopicId] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(HELP_STORAGE_KEY) || '{}');
+      return saved.lastOpenedHelpTopic || 'global-main-nav';
+    } catch {
+      return 'global-main-nav';
+    }
+  });
+  const [helpIconsEnabled, setHelpIconsEnabled] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(HELP_STORAGE_KEY) || '{}');
+      return Boolean(saved.helpIconsEnabled);
+    } catch {
+      return false;
+    }
+  });
+  const [completedTours, setCompletedTours] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(HELP_STORAGE_KEY) || '{}');
+      return Array.isArray(saved.completedTours) ? saved.completedTours : [];
+    } catch {
+      return [];
+    }
+  });
+  const [activeTour, setActiveTour] = useState(null);
   const [wallboardDisplayMode, setWallboardDisplayMode] = useState(() => new URLSearchParams(window.location.search).get('display') === '1');
   const [wallboardMode, setWallboardMode] = useState(() => {
     try {
@@ -1021,6 +1053,9 @@ export default function MLBDashboard() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [expandedProjects, setExpandedProjects] = useState(() => new Set(['P-1001']));
   const currentView = navigationToView(mainArea, productionMode, bottleneckMode);
+  const currentHelpMode = mainArea === MAIN_AREAS.PRODUCTION ? productionMode : mainArea === MAIN_AREAS.BOTTLENECKS ? bottleneckMode : null;
+  const showHelpIcons = helpIconsEnabled && !(wallboardDisplayMode && currentView === VIEWS.WALLBOARD);
+  const Help = ({ id }) => <HelpIcon item={helpById[id]} enabled={showHelpIcons} onOpenTopic={openHelpTopic} />;
 
   useEffect(() => {
     const timer = window.setInterval(() => setLastUpdated(new Date()), 60000);
@@ -1034,6 +1069,17 @@ export default function MLBDashboard() {
   useEffect(() => {
     localStorage.setItem(UI_STORAGE_KEY, JSON.stringify({ currentView, mainArea, productionMode, bottleneckMode, wallboardMode, regionFilter, periodFilter }));
   }, [currentView, mainArea, productionMode, bottleneckMode, wallboardMode, regionFilter, periodFilter]);
+
+  useEffect(() => {
+    localStorage.setItem(HELP_STORAGE_KEY, JSON.stringify({ helpIconsEnabled, completedTours, lastOpenedHelpTopic: activeHelpTopicId }));
+  }, [helpIconsEnabled, completedTours, activeHelpTopicId]);
+
+  useEffect(() => {
+    if (wallboardDisplayMode && currentView === VIEWS.WALLBOARD) {
+      setHelpCenterOpen(false);
+      setActiveTour(null);
+    }
+  }, [wallboardDisplayMode, currentView]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -1059,6 +1105,43 @@ export default function MLBDashboard() {
     const nextUrl = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
     window.history.replaceState(null, '', nextUrl);
   }, [mainArea, productionMode, bottleneckMode, wallboardDisplayMode]);
+
+  const openHelpTopic = (topicId) => {
+    setActiveHelpTopicId(topicId);
+    setHelpCenterOpen(true);
+  };
+
+  const startHelpTour = (tour = 'full-dashboard') => {
+    setHelpCenterOpen(true);
+    setActiveTour(tour);
+    setAdminMenuOpen(false);
+  };
+
+  const completeHelpTour = (tour) => {
+    setCompletedTours((current) => (current.includes(tour) ? current : [...current, tour]));
+    setActiveTour(null);
+  };
+
+  const navigateToHelpItem = (item) => {
+    if (!item) return;
+    if (item.area === 'production') {
+      setMainArea(MAIN_AREAS.PRODUCTION);
+      if (item.mode && Object.values(PRODUCTION_MODES).includes(item.mode)) setProductionMode(item.mode);
+      return;
+    }
+    if (item.area === 'bottlenecks') {
+      setMainArea(MAIN_AREAS.BOTTLENECKS);
+      if (item.mode && Object.values(BOTTLENECK_MODES).includes(item.mode)) setBottleneckMode(item.mode);
+      return;
+    }
+    if (item.area === 'sales') {
+      setMainArea(MAIN_AREAS.SALES);
+      return;
+    }
+    if (item.area === 'wallboard') {
+      setMainArea(MAIN_AREAS.WALLBOARD);
+    }
+  };
 
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => {
@@ -1406,7 +1489,7 @@ export default function MLBDashboard() {
   };
 
   const ExecutiveSummary = () => (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5" data-help-id="customer-view-summary">
       <MetricCard label="Active Pipeline" value={currency(pipelineMetrics.totalRevenue)} detail={`${pipelineMetrics.activeProjects.length} active projects`} />
       <MetricCard label="Deposits Held" value={currency(pipelineMetrics.totalDeposits)} detail="Cash collected at sale" />
       <MetricCard label="Open Alerts" value={pipelineMetrics.alertCount} detail="Production bottlenecks" tone={pipelineMetrics.alertCount ? 'bg-red-50' : 'bg-green-50'} />
@@ -1422,7 +1505,7 @@ export default function MLBDashboard() {
         const alerts = getProjectAlerts(project);
 
         return (
-          <div key={project.id} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-all">
+          <div key={project.id} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-all" data-help-id="customer-project-card">
             <div onClick={() => toggleExpand(project.id)} className="flex cursor-pointer flex-col justify-between gap-4 p-4 transition-colors hover:bg-slate-50 md:flex-row md:items-center">
               <div className="flex items-center gap-4">
                 <div className={`rounded-lg p-2 ${isExpanded ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
@@ -1440,8 +1523,8 @@ export default function MLBDashboard() {
               </div>
 
               <div className="flex flex-wrap items-center gap-4 md:ml-auto md:justify-end">
-                {alerts.length > 0 && <Badge className="border-amber-200 bg-amber-50 text-amber-700">{alerts.length} attention</Badge>}
-                <div className="text-left sm:text-right">
+                {alerts.length > 0 && <Badge className="border-amber-200 bg-amber-50 text-amber-700" data-help-id="customer-alert-badge">{alerts.length} attention</Badge>}
+                <div className="text-left sm:text-right" data-help-id="customer-current-total">
                   <div className="text-xs font-bold uppercase text-slate-400">Current Total</div>
                   <div className="font-black text-slate-800">{currency(getRevisedAmount(project))}</div>
                 </div>
@@ -1449,9 +1532,10 @@ export default function MLBDashboard() {
                   <div className="text-xs font-bold uppercase text-slate-400">Active Since</div>
                   <div className="font-bold text-slate-700">{formatDate(project.dateSold)}</div>
                 </div>
-                <button type="button" onClick={(event) => { event.stopPropagation(); setSelectedProject(project); }} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
+                <button type="button" onClick={(event) => { event.stopPropagation(); setSelectedProject(project); }} data-help-id="customer-open-file" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
                   Open File
                 </button>
+                <Help id="customer-open-file" />
               </div>
             </div>
 
@@ -1461,7 +1545,7 @@ export default function MLBDashboard() {
                   {project.scopes.map((scope) => {
                     const status = getScopeStatus(scope);
                     return (
-                      <div key={scope.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                      <div key={scope.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" data-help-id="customer-scope-card">
                         <div className="mb-3 flex items-start justify-between gap-3">
                           <h4 className="font-bold text-slate-800">{scope.type}</h4>
                           <Badge className={status.color}>{status.label}</Badge>
@@ -1493,10 +1577,10 @@ export default function MLBDashboard() {
 
     return (
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center gap-3 border-b border-slate-200 bg-indigo-50 p-4">
+        <div className="flex items-center gap-3 border-b border-slate-200 bg-indigo-50 p-4" data-help-id="measurement-queue-header">
           <Ruler className="text-indigo-600" size={24} />
           <div>
-            <h2 className="text-lg font-bold text-indigo-900">Measurement & Material List Queue</h2>
+            <h2 className="text-lg font-bold text-indigo-900">Measurement & Material List Queue<Help id="measurement-queue-header" /></h2>
             <p className="text-sm text-indigo-700">Track the 3-day SLA for getting measurements and material lists submitted.</p>
           </div>
         </div>
@@ -1518,11 +1602,11 @@ export default function MLBDashboard() {
                     <td className="px-4 py-3 font-medium">{scope.type}</td>
                     <td className="px-4 py-3">{formatDate(project.dateSold)}</td>
                     <td className="px-4 py-3">{formatDate(scope.measureRequested)}</td>
-                    <td className="px-4 py-3"><span className={`rounded px-2 py-1 text-xs font-bold ${isLate ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'}`}>{days} days</span></td>
-                    <td className="px-4 py-3">{scope.measurer || <span className="italic text-amber-500">Unassigned</span>}</td>
+                    <td className="px-4 py-3" data-help-id="measurement-days-since-request"><span className={`rounded px-2 py-1 text-xs font-bold ${isLate ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'}`}>{days} days</span><Help id="measurement-days-since-request" /></td>
+                    <td className="px-4 py-3" data-help-id="measurement-measurer">{scope.measurer || <span className="italic text-amber-500">Unassigned</span>}</td>
                     <td className="px-4 py-3">{scope.measureCompleted ? <CheckCircle2 size={16} className="text-emerald-500" /> : '-'}</td>
-                    <td className="px-4 py-3">{scope.materialListReceived ? <CheckCircle2 size={16} className="text-emerald-500" /> : '-'}</td>
-                    <td className="px-4 py-3"><button type="button" onClick={() => setSelectedProject(project)} className="rounded bg-blue-50 px-2 py-1 text-xs font-bold text-blue-600 hover:underline">Open File</button></td>
+                    <td className="px-4 py-3" data-help-id="measurement-material-list-received">{scope.materialListReceived ? <CheckCircle2 size={16} className="text-emerald-500" /> : '-'}</td>
+                    <td className="px-4 py-3"><button type="button" onClick={() => setSelectedProject(project)} data-help-id="measurement-open-file" className="rounded bg-blue-50 px-2 py-1 text-xs font-bold text-blue-600 hover:underline">Open File</button><Help id="measurement-open-file" /></td>
                   </tr>
                 );
               })}
@@ -1537,14 +1621,14 @@ export default function MLBDashboard() {
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {allAlerts.map((alertGroup) => (
-          <div key={alertGroup.type} className="rounded-lg border border-red-200 bg-white p-5 shadow-sm">
+          <div key={alertGroup.type} className="rounded-lg border border-red-200 bg-white p-5 shadow-sm" data-help-id="bottleneck-alert-card">
             <div className="mb-4 flex items-center gap-2 text-red-600">
               <AlertCircle size={20} />
-              <h3 className="text-lg font-bold">{alertGroup.type}</h3>
+              <h3 className="text-lg font-bold">{alertGroup.type}<Help id="bottleneck-alert-card" /></h3>
             </div>
             <div className="mb-4 grid grid-cols-3 gap-2 text-center">
               <div className="rounded bg-red-50 p-2"><div className="text-2xl font-bold text-red-700">{alertGroup.count}</div><div className="text-xs uppercase text-red-600">Items</div></div>
-              <div className="rounded bg-orange-50 p-2"><div className="text-2xl font-bold text-orange-700">{alertGroup.oldest}</div><div className="text-xs uppercase text-orange-600">Oldest</div></div>
+              <div className="rounded bg-orange-50 p-2" data-help-id="bottleneck-days-stuck"><div className="text-2xl font-bold text-orange-700">{alertGroup.oldest}<Help id="bottleneck-days-stuck" /></div><div className="text-xs uppercase text-orange-600">Oldest</div></div>
               <div className="rounded bg-yellow-50 p-2"><div className="text-2xl font-bold text-yellow-700">{alertGroup.avgDays}</div><div className="text-xs uppercase text-yellow-600">Avg Days</div></div>
             </div>
             <div className="max-h-56 space-y-2 overflow-y-auto pr-2">
@@ -1553,6 +1637,7 @@ export default function MLBDashboard() {
                   key={`${alertGroup.type}-${item.project.id}-${item.scope?.id || 'project'}`}
                   type="button"
                   onClick={() => setSelectedProject(item.project)}
+                  data-help-id="bottleneck-open-file"
                   className="flex w-full cursor-pointer justify-between gap-3 rounded border border-slate-100 bg-slate-50 p-2 text-left text-sm hover:bg-slate-100"
                 >
                   <span className="font-medium text-slate-800">{item.project.customer}{item.scope ? ` (${item.scope.type})` : ''}</span>
@@ -1581,17 +1666,17 @@ export default function MLBDashboard() {
 
     return (
       <div className="space-y-6">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-          <MetricCard label="Sales Revenue" value={currency(totalRevenue)} detail={`${periodFilter} sold projects`} />
-          <MetricCard label="Projects Sold" value={totalProjects} detail="Filtered by region/period" />
-          <MetricCard label="Leads Given" value={totalLeads} detail="Demo lead input" />
-          <MetricCard label="Close Rate" value={totalLeads ? `${Math.round((totalProjects / totalLeads) * 100)}%` : '-'} detail="Projects divided by leads" />
-          <MetricCard label="Cancel Rate" value={totalProjects + totalCancelled ? `${Math.round((totalCancelled / (totalProjects + totalCancelled)) * 100)}%` : '-'} detail={`${totalCancelled} cancelled`} tone={totalCancelled ? 'bg-red-50' : 'bg-white'} />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-5" data-help-id="sales-summary-metrics">
+          <MetricCard label="Sales Revenue" value={currency(totalRevenue)} detail={`${periodFilter} sold projects`} helpId="sales-revenue" helpIcon={<Help id="sales-revenue" />} />
+          <MetricCard label="Projects Sold" value={totalProjects} detail="Filtered by region/period" helpId="sales-projects-sold" helpIcon={<Help id="sales-projects-sold" />} />
+          <MetricCard label="Leads Given" value={totalLeads} detail="Demo lead input" helpId="sales-leads-given" helpIcon={<Help id="sales-leads-given" />} />
+          <MetricCard label="Close Rate" value={totalLeads ? `${Math.round((totalProjects / totalLeads) * 100)}%` : '-'} detail="Projects divided by leads" helpId="sales-close-rate" helpIcon={<Help id="sales-close-rate" />} />
+          <MetricCard label="Cancel Rate" value={totalProjects + totalCancelled ? `${Math.round((totalCancelled / (totalProjects + totalCancelled)) * 100)}%` : '-'} detail={`${totalCancelled} cancelled`} tone={totalCancelled ? 'bg-red-50' : 'bg-white'} helpId="sales-cancel-rate" helpIcon={<Help id="sales-cancel-rate" />} />
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm" data-help-id="salesperson-performance-table">
           <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
-            <h3 className="font-bold text-slate-800">Salesperson Performance</h3>
+            <h3 className="font-bold text-slate-800">Salesperson Performance<Help id="salesperson-performance-table" /></h3>
             <p className="mt-1 text-sm text-slate-500">Tracks revised project revenue, average contract, close rate, value per lead, and cancellations.</p>
           </div>
           <div className="overflow-x-auto">
@@ -1615,7 +1700,7 @@ export default function MLBDashboard() {
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{currency(rep.avgTicket)}</td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{rep.leads}</td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{Math.round(rep.closingRate * 100)}%</td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{currency(rep.valuePerLead)}</td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700" data-help-id="sales-value-per-lead">{currency(rep.valuePerLead)}<Help id="sales-value-per-lead" /></td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{Math.round(rep.cancellationRate * 100)}%</td>
                   </tr>
                 ))}
@@ -1628,15 +1713,15 @@ export default function MLBDashboard() {
   };
 
   const CriticalPathMeetingView = () => (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white text-sm shadow-sm">
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white text-sm shadow-sm" data-help-id="meeting-view-header">
       <div className="flex items-center justify-between border-b border-slate-200 bg-slate-900 p-4 text-white">
-        <h2 className="flex items-center text-lg font-bold"><Presentation className="mr-2" /> Weekly Critical Path Review</h2>
+        <h2 className="flex items-center text-lg font-bold"><Presentation className="mr-2" /> Weekly Critical Path Review<Help id="meeting-view-header" /></h2>
         <span className="text-xs font-medium opacity-75">Focus: active uncompleted projects</span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left">
           <thead className="border-b-2 border-slate-200 bg-slate-100 text-xs font-black uppercase text-slate-600">
-            <tr><th className="w-48 px-4 py-3">Project / Scopes</th><th className="w-32 px-4 py-3">Value</th><th className="px-4 py-3">Current Status / Next Action</th><th className="px-4 py-3">Decision Needed / Notes</th></tr>
+            <tr><th className="w-48 px-4 py-3" data-help-id="meeting-project-scopes">Project / Scopes</th><th className="w-32 px-4 py-3">Value</th><th className="px-4 py-3" data-help-id="meeting-current-status">Current Status / Next Action<Help id="meeting-current-status" /></th><th className="px-4 py-3" data-help-id="meeting-decision-needed">Decision Needed / Notes<Help id="meeting-decision-needed" /></th></tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
             {filteredProjects.filter((project) => !project.cancelled && !project.scopes.every((scope) => scope.completionDate)).map((project) => (
@@ -1658,7 +1743,7 @@ export default function MLBDashboard() {
                           <span className="font-bold">{scope.type}:</span>
                           <Badge className={status.color}>{status.label}</Badge>
                         </div>
-                        <div className="flex items-center text-xs font-bold text-blue-700"><ChevronRight size={12} /> {calculateNextAction(scope, project)}</div>
+                        <div className="flex items-center text-xs font-bold text-blue-700" data-help-id="meeting-next-action"><ChevronRight size={12} /> {calculateNextAction(scope, project)}<Help id="meeting-next-action" /></div>
                       </div>
                     );
                   })}
@@ -1685,15 +1770,16 @@ export default function MLBDashboard() {
           <WhiteboardStatusKey />
         </div>
       </div>
-      <div className="flex flex-col justify-between gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center">
+      <div className="flex flex-col justify-between gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center" data-help-id="book-view-header">
         <div>
-          <h2 className="flex items-center text-xl font-black text-slate-900"><BookOpen size={22} className="mr-2 text-blue-600" /> Critical Path Book</h2>
+          <h2 className="flex items-center text-xl font-black text-slate-900"><BookOpen size={22} className="mr-2 text-blue-600" /> Critical Path Book<Help id="book-view-header" /></h2>
           <p className="text-sm text-slate-500">Book-style one-row-per-scope replacement for the manual production ledger.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3 print:hidden">
-          <WhiteboardStatusKey />
-          <button type="button" onClick={exportCriticalPathCsv} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"><Download size={16} className="mr-2 inline" /> Export CSV</button>
-          <button type="button" onClick={() => window.print()} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white"><Printer size={16} className="mr-2 inline" /> Print Book</button>
+          <WhiteboardStatusKey helpId="book-status-key" />
+          <Help id="book-status-key" />
+          <button type="button" onClick={exportCriticalPathCsv} data-help-id="book-export-csv" className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"><Download size={16} className="mr-2 inline" /> Export CSV</button><Help id="book-export-csv" />
+          <button type="button" onClick={() => window.print()} data-help-id="book-print-book" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white"><Printer size={16} className="mr-2 inline" /> Print Book</button><Help id="book-print-book" />
         </div>
       </div>
 
@@ -1717,12 +1803,14 @@ export default function MLBDashboard() {
                       <button
                         type="button"
                         onClick={() => setSelectedProject(project)}
+                        data-help-id="book-open-file"
                         className="whitespace-nowrap rounded bg-slate-900 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                       >
                         Open File
                       </button>
+                      <Help id="book-open-file" />
                     </td>
-                    <td className="px-3 py-3 font-semibold text-slate-700">{formatDate(project.dateSold)}</td>
+                    <td className="px-3 py-3 font-semibold text-slate-700" data-help-id="book-date-columns">{formatDate(project.dateSold)}</td>
                     <td className="px-3 py-3 font-black text-slate-900">{project.customer}{project.cancelled && <div className="mt-1 text-[10px] font-black uppercase text-red-600">Cancelled {formatDate(project.cancellationDate)}</div>}</td>
                     <td className="px-3 py-3">{project.city}</td>
                     <td className="px-3 py-3 font-bold">{scope?.type || 'No scope'}</td>
@@ -1737,7 +1825,7 @@ export default function MLBDashboard() {
                     <td className="px-3 py-3">{scope?.crew || '-'}</td>
                     <td className="px-3 py-3">{formatDate(scope?.completionDate)}</td>
                     <td className="px-3 py-3">{project.collected ? 'Yes' : 'No'}</td>
-                    <td className="max-w-[260px] px-3 py-3">
+                    <td className="max-w-[260px] px-3 py-3" data-help-id="book-alert-notes">
                       <div className="font-medium text-slate-700">{scope?.notes || project.notes || '-'}</div>
                       {alerts.length > 0 && <div className="mt-1 text-[10px] font-black uppercase text-red-600">{alerts.map((alert) => alert.type).join(', ')}</div>}
                       {scope && Object.keys(scope.specs || {}).length > 0 && <div className="mt-1 text-[10px] text-slate-500">{Object.entries(scope.specs).map(([key, value]) => `${key}: ${value}`).join(' | ')}</div>}
@@ -1752,10 +1840,10 @@ export default function MLBDashboard() {
     </div>
   );
 
-  const WallboardKpi = ({ label, value, detail, tone = 'border-slate-700 bg-slate-900' }) => (
-    <div className={`rounded-lg border p-4 shadow-lg ${tone}`}>
+  const WallboardKpi = ({ label, value, detail, tone = 'border-slate-700 bg-slate-900', helpId }) => (
+    <div className={`rounded-lg border p-4 shadow-lg ${tone}`} data-help-id={helpId}>
       <p className="text-sm font-black uppercase tracking-wide text-slate-300">{label}</p>
-      <div className="mt-2 text-4xl font-black text-white">{value}</div>
+      <div className="mt-2 text-4xl font-black text-white">{value}{helpId && <Help id={helpId} />}</div>
       {detail && <p className="mt-1 text-sm font-bold text-slate-300">{detail}</p>}
     </div>
   );
@@ -1819,42 +1907,43 @@ export default function MLBDashboard() {
     return (
       <div className={`${wallboardDisplayMode ? 'fixed inset-0 z-[60] overflow-y-auto bg-slate-950 p-5 text-white' : 'space-y-6'}`}>
         <section className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950 text-white shadow-2xl">
-          <div className="flex flex-col justify-between gap-4 border-b border-slate-800 bg-slate-900 px-5 py-4 xl:flex-row xl:items-center">
+          <div className="flex flex-col justify-between gap-4 border-b border-slate-800 bg-slate-900 px-5 py-4 xl:flex-row xl:items-center" data-help-id="wallboard-header">
             <div>
               <div className="flex flex-wrap items-center gap-3">
                 <Monitor className="text-blue-400" size={30} />
-                <h2 className="text-3xl font-black tracking-tight">Major League Builders TV Wallboard</h2>
+                <h2 className="text-3xl font-black tracking-tight">Major League Builders TV Wallboard<Help id="wallboard-header" /></h2>
                 <span className="rounded bg-blue-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-blue-200">{regionFilter} | {periodFilter}</span>
               </div>
               <p className="mt-1 text-base font-semibold text-slate-300">Last updated {lastUpdatedLabel}</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => setWallboardMode('production')} className={`rounded-lg px-4 py-3 text-sm font-black uppercase tracking-wide ${wallboardMode === 'production' ? 'bg-blue-600 text-white' : 'border border-slate-600 bg-slate-800 text-slate-200'}`}>Production Flow</button>
-              <button type="button" onClick={() => setWallboardMode('trade')} className={`rounded-lg px-4 py-3 text-sm font-black uppercase tracking-wide ${wallboardMode === 'trade' ? 'bg-blue-600 text-white' : 'border border-slate-600 bg-slate-800 text-slate-200'}`}>Trade Board</button>
-              <button type="button" onClick={toggleWallboardDisplayMode} className="flex items-center justify-center rounded-lg border border-slate-600 bg-slate-800 px-4 py-3 text-sm font-black uppercase tracking-wide text-white hover:bg-slate-700">
+              <button type="button" onClick={() => setWallboardMode('production')} data-help-id="wallboard-production-flow-toggle" className={`rounded-lg px-4 py-3 text-sm font-black uppercase tracking-wide ${wallboardMode === 'production' ? 'bg-blue-600 text-white' : 'border border-slate-600 bg-slate-800 text-slate-200'}`}>Production Flow</button><Help id="wallboard-production-flow-toggle" />
+              <button type="button" onClick={() => setWallboardMode('trade')} data-help-id="wallboard-trade-board-toggle" className={`rounded-lg px-4 py-3 text-sm font-black uppercase tracking-wide ${wallboardMode === 'trade' ? 'bg-blue-600 text-white' : 'border border-slate-600 bg-slate-800 text-slate-200'}`}>Trade Board</button><Help id="wallboard-trade-board-toggle" />
+              <button type="button" onClick={toggleWallboardDisplayMode} data-help-id="wallboard-display-mode" className="flex items-center justify-center rounded-lg border border-slate-600 bg-slate-800 px-4 py-3 text-sm font-black uppercase tracking-wide text-white hover:bg-slate-700">
                 {wallboardDisplayMode ? <Minimize2 size={18} className="mr-2" /> : <Maximize2 size={18} className="mr-2" />}
                 {wallboardDisplayMode ? 'Exit Display Mode' : 'Display Mode'}
-              </button>
+              </button><Help id="wallboard-display-mode" />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-3 2xl:grid-cols-6">
-            <WallboardKpi label="Active Pipeline" value={currency(pipelineMetrics.totalRevenue)} detail="Open production value" tone="border-blue-700 bg-blue-950" />
+            <WallboardKpi label="Active Pipeline" value={currency(pipelineMetrics.totalRevenue)} detail="Open production value" tone="border-blue-700 bg-blue-950" helpId="wallboard-kpi-active-pipeline" />
             <WallboardKpi label="Active Projects" value={pipelineMetrics.activeProjects.length} detail={`${flatScopes.length} total scopes`} />
-            <WallboardKpi label="Open Alerts" value={pipelineMetrics.alertCount} detail="Bottlenecks requiring action" tone={pipelineMetrics.alertCount ? 'border-red-700 bg-red-950' : 'border-green-700 bg-green-950'} />
+            <WallboardKpi label="Open Alerts" value={pipelineMetrics.alertCount} detail="Bottlenecks requiring action" tone={pipelineMetrics.alertCount ? 'border-red-700 bg-red-950' : 'border-green-700 bg-green-950'} helpId="wallboard-kpi-open-alerts" />
             <WallboardKpi label="Avg Sold to Done" value={`${pipelineMetrics.avgSoldToDone || '-'}d`} detail="Completed scopes" />
             <WallboardKpi label="Scheduled Scopes" value={pipelineMetrics.scheduledCount} detail="Install dates set" tone="border-pink-700 bg-pink-950" />
-            <WallboardKpi label="Collection Needed" value={pipelineMetrics.collectionOpen} detail="Completed, not funded" tone={pipelineMetrics.collectionOpen ? 'border-amber-600 bg-amber-950' : 'border-slate-700 bg-slate-900'} />
+            <WallboardKpi label="Collection Needed" value={pipelineMetrics.collectionOpen} detail="Completed, not funded" tone={pipelineMetrics.collectionOpen ? 'border-amber-600 bg-amber-950' : 'border-slate-700 bg-slate-900'} helpId="wallboard-kpi-collection-needed" />
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-800 bg-slate-900 p-4 shadow-xl">
+        <section className="rounded-lg border border-slate-800 bg-slate-900 p-4 shadow-xl" data-help-id="wallboard-status-columns">
           <div className="mb-4 flex flex-col justify-between gap-2 lg:flex-row lg:items-end">
             <div>
               <h3 className="text-2xl font-black text-white">{wallboardMode === 'trade' ? 'Trade Board' : 'Production Flow'}</h3>
               <p className="text-sm font-semibold text-slate-400">{wallboardMode === 'trade' ? 'Mirrors the physical whiteboard by work category.' : 'Scope-level whiteboard ordered by alert urgency and days active.'}</p>
             </div>
             <WhiteboardStatusKey dark />
+            <Help id="wallboard-status-columns" />
           </div>
 
           <div className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${columnNames.length > 7 ? 'xl:grid-cols-5 2xl:grid-cols-9' : 'xl:grid-cols-4 2xl:grid-cols-7'}`}>
@@ -1878,8 +1967,8 @@ export default function MLBDashboard() {
         </section>
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-          <section className="rounded-lg border border-red-900/70 bg-slate-900 p-4 shadow-xl">
-            <h3 className="mb-4 text-2xl font-black text-white">Bottleneck Spotlight</h3>
+          <section className="rounded-lg border border-red-900/70 bg-slate-900 p-4 shadow-xl" data-help-id="wallboard-bottleneck-spotlight">
+            <h3 className="mb-4 text-2xl font-black text-white">Bottleneck Spotlight<Help id="wallboard-bottleneck-spotlight" /></h3>
             <div className="space-y-3">
               {allAlerts.slice(0, 5).map((group) => (
                 <div key={group.type} className="rounded-lg border border-red-800 bg-red-950/50 p-3">
@@ -1903,8 +1992,8 @@ export default function MLBDashboard() {
             </div>
           </section>
 
-          <section className="rounded-lg border border-blue-900/70 bg-slate-900 p-4 shadow-xl">
-            <h3 className="mb-4 text-2xl font-black text-white">Sales Snapshot</h3>
+          <section className="rounded-lg border border-blue-900/70 bg-slate-900 p-4 shadow-xl" data-help-id="wallboard-sales-snapshot">
+            <h3 className="mb-4 text-2xl font-black text-white">Sales Snapshot<Help id="wallboard-sales-snapshot" /></h3>
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg bg-blue-950 p-4"><p className="text-xs font-black uppercase text-blue-300">Revenue</p><p className="text-3xl font-black text-white">{currency(wallboardSalesTotals.totalRevenue)}</p></div>
               <div className="rounded-lg bg-slate-950 p-4"><p className="text-xs font-black uppercase text-slate-400">Projects Sold</p><p className="text-3xl font-black text-white">{wallboardSalesTotals.totalProjects}</p></div>
@@ -1925,8 +2014,8 @@ export default function MLBDashboard() {
             </div>
           </section>
 
-          <section className="rounded-lg border border-amber-900/70 bg-slate-900 p-4 shadow-xl">
-            <h3 className="mb-4 text-2xl font-black text-white">Critical Path Spotlight</h3>
+          <section className="rounded-lg border border-amber-900/70 bg-slate-900 p-4 shadow-xl" data-help-id="wallboard-critical-path-spotlight">
+            <h3 className="mb-4 text-2xl font-black text-white">Critical Path Spotlight<Help id="wallboard-critical-path-spotlight" /></h3>
             <div className="space-y-3">
               {criticalPathSpotlight.map((item) => (
                 <div key={item.id} className="rounded-lg border border-amber-800 bg-amber-950/40 p-3">
@@ -1961,17 +2050,19 @@ export default function MLBDashboard() {
 
           <div className="flex flex-wrap items-center gap-2">
             <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleImportBackup} className="hidden" />
-            <label className="text-sm font-semibold text-slate-600">
+            <label data-help-id="global-region-filter" className="text-sm font-semibold text-slate-600">
               Region
               <select value={regionFilter} onChange={(event) => setRegionFilter(event.target.value)} className="ml-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm">
                 {REGIONS.map((region) => <option key={region} value={region}>{region}</option>)}
               </select>
+              <Help id="global-region-filter" />
             </label>
-            <label className="text-sm font-semibold text-slate-600">
+            <label data-help-id="global-period-filter" className="text-sm font-semibold text-slate-600">
               Period
               <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)} className="ml-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm">
                 {PERIODS.map((period) => <option key={period} value={period}>{period}</option>)}
               </select>
+              <Help id="global-period-filter" />
             </label>
             <div className="relative">
               <button
@@ -1979,6 +2070,7 @@ export default function MLBDashboard() {
                 onClick={() => setAdminMenuOpen((open) => !open)}
                 className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
                 aria-label="Open admin tools"
+                data-help-id="global-admin-menu"
               >
                 <User size={18} />
               </button>
@@ -1989,25 +2081,37 @@ export default function MLBDashboard() {
                     <p className="mt-1 text-xs font-medium text-slate-500">Local demo storage active</p>
                     <p className="mt-1 text-xs text-slate-500">Prototype data is not connected to JobNimbus or QuickBooks.</p>
                   </div>
-                  <button type="button" onClick={() => { exportProjectsJson(projects); setAdminMenuOpen(false); }} className="flex w-full items-center px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-slate-50">
+                  <button data-help-id="admin-export-backup" type="button" onClick={() => { exportProjectsJson(projects); setAdminMenuOpen(false); }} className="flex w-full items-center px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-slate-50">
                     <Download size={16} className="mr-2" /> Export Backup JSON
                   </button>
-                  <button type="button" onClick={() => { fileInputRef.current?.click(); setAdminMenuOpen(false); }} className="flex w-full items-center px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-slate-50">
+                  <button data-help-id="admin-import-backup" type="button" onClick={() => { fileInputRef.current?.click(); setAdminMenuOpen(false); }} className="flex w-full items-center px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-slate-50">
                     <Upload size={16} className="mr-2" /> Import Backup JSON
                   </button>
-                  <button type="button" onClick={() => { setAdminMenuOpen(false); handleResetDemoData(); }} className="flex w-full items-center border-t border-slate-100 px-4 py-3 text-left text-sm font-bold text-red-700 hover:bg-red-50">
+                  <button data-help-id="admin-reset-demo-data" type="button" onClick={() => { setAdminMenuOpen(false); handleResetDemoData(); }} className="flex w-full items-center border-t border-slate-100 px-4 py-3 text-left text-sm font-bold text-red-700 hover:bg-red-50">
                     <Trash2 size={16} className="mr-2" /> Reset Demo Data
+                  </button>
+                  <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[11px] font-black uppercase tracking-wide text-slate-500">Help</div>
+                  <button data-help-id="admin-help-center" type="button" onClick={() => { setHelpCenterOpen(true); setAdminMenuOpen(false); }} className="flex w-full items-center px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-slate-50">
+                    Help Center
+                  </button>
+                  <button data-help-id="admin-help-icons-toggle" type="button" onClick={() => { setHelpIconsEnabled((enabled) => !enabled); setAdminMenuOpen(false); }} className="flex w-full items-center px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-slate-50">
+                    {helpIconsEnabled ? 'Turn Help Icons Off' : 'Turn Help Icons On'}
+                  </button>
+                  <button data-help-id="admin-start-walkthrough" type="button" onClick={() => startHelpTour('full-dashboard')} className="flex w-full items-center px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-slate-50">
+                    Start Guided Walkthrough
                   </button>
                 </div>
               )}
             </div>
-            <button type="button" onClick={() => setSelectedProject(emptyProject())} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
+            <Help id="global-admin-menu" />
+            <button data-help-id="global-new-project" type="button" onClick={() => setSelectedProject(emptyProject())} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
               <Plus size={16} className="mr-2 inline" /> New Project
             </button>
+            <Help id="global-new-project" />
           </div>
         </div>
 
-        <nav className="mx-auto flex w-full max-w-[1920px] gap-2 overflow-x-auto px-4 pb-2" aria-label="Main navigation">
+        <nav data-help-id="global-main-nav" className="mx-auto flex w-full max-w-[1920px] gap-2 overflow-x-auto px-4 pb-2" aria-label="Main navigation">
           {MAIN_NAV_ITEMS.map((item) => (
             <button
               key={item.id}
@@ -2020,15 +2124,17 @@ export default function MLBDashboard() {
               {item.label}
             </button>
           ))}
+          <Help id={mainArea === MAIN_AREAS.BOTTLENECKS ? 'bottlenecks-main-nav' : mainArea === MAIN_AREAS.SALES ? 'sales-main-nav' : mainArea === MAIN_AREAS.WALLBOARD ? 'wallboard-main-nav' : 'production-main-nav'} />
         </nav>
 
         {(mainArea === MAIN_AREAS.PRODUCTION || mainArea === MAIN_AREAS.BOTTLENECKS) && (
-          <div className="mx-auto flex w-full max-w-[1920px] gap-2 overflow-x-auto px-4 pb-3" aria-label={mainArea === MAIN_AREAS.PRODUCTION ? 'Production views' : 'Bottleneck filters'}>
+          <div data-help-id={mainArea === MAIN_AREAS.PRODUCTION ? 'production-subnav' : 'bottlenecks-subnav'} className="mx-auto flex w-full max-w-[1920px] gap-2 overflow-x-auto px-4 pb-3" aria-label={mainArea === MAIN_AREAS.PRODUCTION ? 'Production views' : 'Bottleneck filters'}>
             {mainArea === MAIN_AREAS.PRODUCTION && PRODUCTION_NAV_ITEMS.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setProductionMode(item.id)}
+                data-help-id={item.id === PRODUCTION_MODES.BOOK ? 'production-book-mode' : item.id === PRODUCTION_MODES.MEETING ? 'production-meeting-mode' : 'production-customer-mode'}
                 className={`whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-black uppercase tracking-wide transition-colors ${
                   productionMode === item.id
                     ? 'border-blue-600 bg-blue-50 text-blue-700'
@@ -2038,11 +2144,13 @@ export default function MLBDashboard() {
                 {item.label}
               </button>
             ))}
+            {mainArea === MAIN_AREAS.PRODUCTION && <Help id={productionMode === PRODUCTION_MODES.BOOK ? 'production-book-mode' : productionMode === PRODUCTION_MODES.MEETING ? 'production-meeting-mode' : 'production-customer-mode'} />}
             {mainArea === MAIN_AREAS.BOTTLENECKS && BOTTLENECK_NAV_ITEMS.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setBottleneckMode(item.id)}
+                data-help-id={item.id === BOTTLENECK_MODES.MEASUREMENT ? 'bottlenecks-measurement-filter' : 'bottlenecks-all-filter'}
                 className={`whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-black uppercase tracking-wide transition-colors ${
                   bottleneckMode === item.id
                     ? 'border-blue-600 bg-blue-50 text-blue-700'
@@ -2052,6 +2160,7 @@ export default function MLBDashboard() {
                 {item.label}
               </button>
             ))}
+            {mainArea === MAIN_AREAS.BOTTLENECKS && <Help id={bottleneckMode === BOTTLENECK_MODES.MEASUREMENT ? 'bottlenecks-measurement-filter' : 'bottlenecks-all-filter'} />}
           </div>
         )}
       </header>
@@ -2072,8 +2181,29 @@ export default function MLBDashboard() {
           project={selectedProject.customer || selectedProject.id ? selectedProject : null}
           onClose={() => setSelectedProject(null)}
           onSave={saveProject}
+          helpIconsEnabled={showHelpIcons}
+          onOpenHelpTopic={openHelpTopic}
         />
       )}
+
+      <HelpCenterDrawer
+        open={helpCenterOpen}
+        onClose={() => setHelpCenterOpen(false)}
+        area={mainArea}
+        mode={currentHelpMode}
+        activeTopicId={activeHelpTopicId}
+        onSelectTopic={setActiveHelpTopicId}
+        helpIconsEnabled={helpIconsEnabled}
+        onToggleHelpIcons={() => setHelpIconsEnabled((enabled) => !enabled)}
+        onStartTour={startHelpTour}
+      />
+
+      <GuidedWalkthrough
+        activeTour={activeTour}
+        onClose={() => setActiveTour(null)}
+        onComplete={completeHelpTour}
+        onNavigateToItem={navigateToHelpItem}
+      />
 
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
