@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -11,7 +11,10 @@ import {
   DollarSign,
   FileText,
   LayoutDashboard,
+  Maximize2,
   MapPin,
+  Minimize2,
+  Monitor,
   Plus,
   Presentation,
   Printer,
@@ -200,7 +203,17 @@ const initialProjects = [
 const PRODUCT_CATEGORIES = ['Roofs', 'Siding', 'Windows', 'Decks', 'Gutters', 'Doors', 'Trim', 'Repairs', 'Misc'];
 const REGIONS = ['All', 'Virginia', 'Carolina'];
 const PERIODS = ['MTD', 'QTD', 'YTD', 'All'];
-const VIEWS = { CENTER: 'center', MEASURE: 'measure', BOTTLENECKS: 'bottlenecks', SALES: 'sales', CRITICAL: 'critical' };
+const VIEWS = { CENTER: 'center', MEASURE: 'measure', BOTTLENECKS: 'bottlenecks', SALES: 'sales', CRITICAL: 'critical', WALLBOARD: 'wallboard' };
+
+const WALLBOARD_COLUMNS = [
+  'Needs Measurer',
+  'Measure / List Needed',
+  'Ready to Order',
+  'Ordered / Waiting Materials',
+  'Materials In / Ready to Schedule',
+  'Scheduled',
+  'Collection / Closeout',
+];
 
 const salesActivity = {
   Jack: { leads: 38, opportunities: 28 },
@@ -306,6 +319,17 @@ const getProjectAlerts = (project) => {
     scopeAlerts.push({ type: 'Decision Needed', daysStuck: daysBetween(todayISO(), project.dateSold), scope: null });
   }
   return scopeAlerts;
+};
+
+const getWallboardColumn = (project, scope) => {
+  if (project.cancelled || isProjectClosed(project)) return null;
+  if (scope.completionDate && !project.collected) return 'Collection / Closeout';
+  if (scope.scheduledInstallDate && !scope.completionDate) return 'Scheduled';
+  if (scope.materialsIn && !scope.scheduledInstallDate) return 'Materials In / Ready to Schedule';
+  if (scope.dateOrdered || scope.materialETA) return 'Ordered / Waiting Materials';
+  if (scope.materialListReceived && !scope.dateOrdered) return 'Ready to Order';
+  if (scope.measurer || scope.measureCompleted) return 'Measure / List Needed';
+  return 'Needs Measurer';
 };
 
 const isInPeriod = (dateStr, period) => {
@@ -675,12 +699,22 @@ const ProjectModal = ({ project, onClose, onSave }) => {
 
 export default function MLBDashboard() {
   const [projects, setProjects] = useState(initialProjects);
-  const [currentView, setCurrentView] = useState(VIEWS.CENTER);
+  const [currentView, setCurrentView] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('view') === 'wallboard' ? VIEWS.WALLBOARD : VIEWS.CENTER;
+  });
   const [regionFilter, setRegionFilter] = useState('All');
   const [periodFilter, setPeriodFilter] = useState('YTD');
   const [meetingMode, setMeetingMode] = useState(false);
+  const [wallboardDisplayMode, setWallboardDisplayMode] = useState(() => new URLSearchParams(window.location.search).get('display') === '1');
+  const [lastUpdated, setLastUpdated] = useState(new Date());
   const [selectedProject, setSelectedProject] = useState(null);
   const [expandedProjects, setExpandedProjects] = useState(() => new Set(['P-1001']));
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setLastUpdated(new Date()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => {
@@ -769,6 +803,92 @@ export default function MLBDashboard() {
       .sort((a, b) => b.revenue - a.revenue);
   }, [filteredProjects]);
 
+  const wallboardColumns = useMemo(() => {
+    const columns = WALLBOARD_COLUMNS.reduce((acc, column) => ({ ...acc, [column]: [] }), {});
+
+    flatScopes.forEach((item) => {
+      const column = getWallboardColumn(item.project, item);
+      if (!column) return;
+      const alerts = getScopeAlerts(item.project, item);
+      const projectAlerts = getProjectAlerts(item.project).filter((alert) => !alert.scope || alert.scope.id === item.id);
+      const allItemAlerts = [...alerts, ...projectAlerts.filter((alert) => alert.scope === null)];
+      const daysActive = daysBetween(todayISO(), item.project.dateSold);
+      const daysStuck = allItemAlerts.length ? Math.max(...allItemAlerts.map((alert) => alert.daysStuck)) : daysActive;
+      columns[column].push({ ...item, alerts: allItemAlerts, daysActive, daysStuck });
+    });
+
+    Object.keys(columns).forEach((column) => {
+      columns[column].sort((a, b) => {
+        const alertDiff = Number(b.alerts.length > 0) - Number(a.alerts.length > 0);
+        if (alertDiff) return alertDiff;
+        if (b.daysStuck !== a.daysStuck) return b.daysStuck - a.daysStuck;
+        return new Date(`${a.project.dateSold}T00:00:00`) - new Date(`${b.project.dateSold}T00:00:00`);
+      });
+    });
+
+    return columns;
+  }, [flatScopes]);
+
+  const wallboardSalesTotals = useMemo(() => {
+    const totalRevenue = salesStats.reduce((sum, rep) => sum + rep.revenue, 0);
+    const totalLeads = salesStats.reduce((sum, rep) => sum + rep.leads, 0);
+    const totalProjects = salesStats.reduce((sum, rep) => sum + rep.projects, 0);
+    const topRep = salesStats[0];
+
+    return {
+      totalRevenue,
+      totalLeads,
+      totalProjects,
+      closeRate: totalLeads ? Math.round((totalProjects / totalLeads) * 100) : 0,
+      topRep,
+    };
+  }, [salesStats]);
+
+  const criticalPathSpotlight = useMemo(() => {
+    const discussionItems = [];
+
+    filteredProjects.forEach((project) => {
+      const projectDays = daysBetween(todayISO(), project.dateSold);
+
+      if (project.decisionNeeded) {
+        discussionItems.push({
+          id: `${project.id}-decision`,
+          project,
+          scope: null,
+          label: 'Decision Needed',
+          detail: project.decisionNeeded,
+          priority: 100 + projectDays,
+        });
+      }
+
+      if (!project.cancelled && project.scopes.length > 0 && project.scopes.every((scope) => scope.completionDate) && !project.collected) {
+        discussionItems.push({
+          id: `${project.id}-collection`,
+          project,
+          scope: null,
+          label: 'Collection / Funding',
+          detail: 'Completed project is not collected or funded.',
+          priority: 90 + projectDays,
+        });
+      }
+
+      project.scopes.forEach((scope) => {
+        getScopeAlerts(project, scope).forEach((alert) => {
+          discussionItems.push({
+            id: `${project.id}-${scope.id}-${alert.type}`,
+            project,
+            scope,
+            label: alert.type,
+            detail: calculateNextAction(scope, project),
+            priority: alert.daysStuck,
+          });
+        });
+      });
+    });
+
+    return discussionItems.sort((a, b) => b.priority - a.priority).slice(0, 8);
+  }, [filteredProjects]);
+
   const toggleExpand = (id) => {
     setExpandedProjects((current) => {
       const next = new Set(current);
@@ -783,6 +903,18 @@ export default function MLBDashboard() {
       return exists ? current.map((project) => (project.id === updatedProject.id ? updatedProject : project)) : [updatedProject, ...current];
     });
     setSelectedProject(null);
+  };
+
+  const toggleWallboardDisplayMode = () => {
+    setWallboardDisplayMode((enabled) => !enabled);
+
+    if (!wallboardDisplayMode && document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+
+    if (wallboardDisplayMode && document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
   };
 
   const ExecutiveSummary = () => (
@@ -1045,22 +1177,215 @@ export default function MLBDashboard() {
     </div>
   );
 
+  const WallboardKpi = ({ label, value, detail, tone = 'border-slate-700 bg-slate-900' }) => (
+    <div className={`rounded-lg border p-4 shadow-lg ${tone}`}>
+      <p className="text-sm font-black uppercase tracking-wide text-slate-300">{label}</p>
+      <div className="mt-2 text-4xl font-black text-white">{value}</div>
+      {detail && <p className="mt-1 text-sm font-bold text-slate-300">{detail}</p>}
+    </div>
+  );
+
+  const TVWallboardView = () => {
+    const maxCardsPerColumn = wallboardDisplayMode ? 5 : 4;
+    const lastUpdatedLabel = lastUpdated.toLocaleString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+
+    return (
+      <div className={`${wallboardDisplayMode ? 'fixed inset-0 z-[60] overflow-y-auto bg-slate-950 p-5 text-white' : 'space-y-6'}`}>
+        <section className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950 text-white shadow-2xl">
+          <div className="flex flex-col justify-between gap-4 border-b border-slate-800 bg-slate-900 px-5 py-4 xl:flex-row xl:items-center">
+            <div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Monitor className="text-blue-400" size={30} />
+                <h2 className="text-3xl font-black tracking-tight">Major League Builders TV Wallboard</h2>
+                <span className="rounded bg-blue-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-blue-200">{regionFilter} | {periodFilter}</span>
+              </div>
+              <p className="mt-1 text-base font-semibold text-slate-300">Last updated {lastUpdatedLabel}</p>
+            </div>
+            <button
+              type="button"
+              onClick={toggleWallboardDisplayMode}
+              className="flex items-center justify-center rounded-lg border border-slate-600 bg-slate-800 px-4 py-3 text-sm font-black uppercase tracking-wide text-white hover:bg-slate-700"
+            >
+              {wallboardDisplayMode ? <Minimize2 size={18} className="mr-2" /> : <Maximize2 size={18} className="mr-2" />}
+              {wallboardDisplayMode ? 'Exit Display Mode' : 'Display Mode'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-3 2xl:grid-cols-6">
+            <WallboardKpi label="Active Pipeline" value={currency(pipelineMetrics.totalRevenue)} detail="Open production value" tone="border-blue-700 bg-blue-950" />
+            <WallboardKpi label="Active Projects" value={pipelineMetrics.activeProjects.length} detail={`${flatScopes.length} total scopes`} />
+            <WallboardKpi label="Open Alerts" value={pipelineMetrics.alertCount} detail="Bottlenecks requiring action" tone={pipelineMetrics.alertCount ? 'border-red-700 bg-red-950' : 'border-green-700 bg-green-950'} />
+            <WallboardKpi label="Avg Sold to Done" value={`${pipelineMetrics.avgSoldToDone || '-'}d`} detail="Completed scopes" />
+            <WallboardKpi label="Scheduled Scopes" value={pipelineMetrics.scheduledCount} detail="Install dates set" tone="border-pink-700 bg-pink-950" />
+            <WallboardKpi label="Collection Needed" value={pipelineMetrics.collectionOpen} detail="Completed, not funded" tone={pipelineMetrics.collectionOpen ? 'border-amber-600 bg-amber-950' : 'border-slate-700 bg-slate-900'} />
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-slate-800 bg-slate-900 p-4 shadow-xl">
+          <div className="mb-4 flex flex-col justify-between gap-2 lg:flex-row lg:items-end">
+            <div>
+              <h3 className="text-2xl font-black text-white">Production Flow</h3>
+              <p className="text-sm font-semibold text-slate-400">Scope-level whiteboard ordered by alert urgency and days active.</p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs font-black uppercase tracking-wide">
+              <span className="rounded bg-red-500 px-2 py-1 text-white">Red urgent</span>
+              <span className="rounded bg-amber-400 px-2 py-1 text-amber-950">Amber attention</span>
+              <span className="rounded bg-blue-500 px-2 py-1 text-white">Blue scheduled / pending</span>
+              <span className="rounded bg-green-500 px-2 py-1 text-white">Green ready</span>
+              <span className="rounded bg-slate-500 px-2 py-1 text-white">Slate complete</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+            {WALLBOARD_COLUMNS.map((column) => {
+              const items = wallboardColumns[column] || [];
+              return (
+                <div key={column} className="min-h-[260px] rounded-lg border border-slate-700 bg-slate-950/80">
+                  <div className="flex items-center justify-between border-b border-slate-700 px-3 py-3">
+                    <h4 className="text-sm font-black uppercase tracking-wide text-slate-100">{column}</h4>
+                    <span className="rounded-full bg-slate-800 px-2 py-1 text-xs font-black text-slate-200">{items.length}</span>
+                  </div>
+                  <div className="space-y-3 p-3">
+                    {items.slice(0, maxCardsPerColumn).map((item) => {
+                      const status = getScopeStatus(item);
+                      const urgent = item.alerts.length > 0;
+                      const dateLabel = item.scheduledInstallDate
+                        ? `Install ${formatDate(item.scheduledInstallDate)}`
+                        : item.materialETA
+                          ? `ETA ${formatDate(item.materialETA)}`
+                          : item.materialsIn
+                            ? `Materials in ${formatDate(item.materialsIn)}`
+                            : `Sold ${formatDate(item.project.dateSold)}`;
+
+                      return (
+                        <div key={`${item.project.id}-${item.id}`} className={`rounded-lg border p-3 shadow ${urgent ? 'border-red-500 bg-red-950/70' : 'border-slate-700 bg-slate-900'}`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <h5 className="text-lg font-black leading-tight text-white">{item.project.customer}</h5>
+                              <p className="text-sm font-bold text-slate-300">{item.type} | {item.project.city || item.project.region}</p>
+                            </div>
+                            {urgent && <span className="rounded bg-red-500 px-2 py-1 text-[10px] font-black uppercase text-white">{item.alerts[0].type}</span>}
+                          </div>
+                          <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-slate-300">
+                            <span>Rep: {item.project.salesperson || 'TBD'}</span>
+                            <span className="text-right">{currency(getRevisedAmount(item.project))}</span>
+                            <span>{item.daysActive} days active</span>
+                            <span className="text-right">{dateLabel}</span>
+                          </div>
+                          <div className="mt-3 rounded bg-slate-950/70 p-2">
+                            <p className="text-xs font-black uppercase tracking-wide text-slate-400">Next Action</p>
+                            <p className="text-sm font-black text-blue-200">{calculateNextAction(item, item.project)}</p>
+                          </div>
+                          <div className="mt-2 flex items-center justify-between gap-2">
+                            <Badge className={status.color}>{status.label}</Badge>
+                            {urgent && <span className="text-xs font-black text-red-200">{item.daysStuck}d stuck</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {items.length === 0 && <div className="rounded border border-dashed border-slate-700 py-8 text-center text-sm font-bold text-slate-500">No scopes</div>}
+                    {items.length > maxCardsPerColumn && <div className="rounded bg-slate-800 px-3 py-2 text-center text-sm font-black text-slate-200">+{items.length - maxCardsPerColumn} more</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <section className="rounded-lg border border-red-900/70 bg-slate-900 p-4 shadow-xl">
+            <h3 className="mb-4 text-2xl font-black text-white">Bottleneck Spotlight</h3>
+            <div className="space-y-3">
+              {allAlerts.slice(0, 5).map((group) => (
+                <div key={group.type} className="rounded-lg border border-red-800 bg-red-950/50 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-lg font-black text-red-100">{group.type}</h4>
+                      <p className="text-sm font-bold text-red-200">{group.count} affected | oldest {group.oldest}d</p>
+                    </div>
+                    <AlertTriangle className="text-red-300" size={28} />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {group.items.slice(0, 3).map((item) => (
+                      <span key={`${group.type}-${item.project.id}-${item.scope?.id || 'project'}`} className="rounded bg-white/10 px-2 py-1 text-xs font-bold text-red-100">
+                        {item.project.customer}{item.scope ? ` / ${item.scope.type}` : ''}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {allAlerts.length === 0 && <div className="rounded-lg border border-green-700 bg-green-950 p-5 text-lg font-black text-green-100">No active bottlenecks.</div>}
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-blue-900/70 bg-slate-900 p-4 shadow-xl">
+            <h3 className="mb-4 text-2xl font-black text-white">Sales Snapshot</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg bg-blue-950 p-4"><p className="text-xs font-black uppercase text-blue-300">Revenue</p><p className="text-3xl font-black text-white">{currency(wallboardSalesTotals.totalRevenue)}</p></div>
+              <div className="rounded-lg bg-slate-950 p-4"><p className="text-xs font-black uppercase text-slate-400">Projects Sold</p><p className="text-3xl font-black text-white">{wallboardSalesTotals.totalProjects}</p></div>
+              <div className="rounded-lg bg-slate-950 p-4"><p className="text-xs font-black uppercase text-slate-400">Leads Given</p><p className="text-3xl font-black text-white">{wallboardSalesTotals.totalLeads}</p></div>
+              <div className="rounded-lg bg-green-950 p-4"><p className="text-xs font-black uppercase text-green-300">Close Rate</p><p className="text-3xl font-black text-white">{wallboardSalesTotals.closeRate}%</p></div>
+            </div>
+            <div className="mt-4 rounded-lg border border-slate-700 bg-slate-950 p-4">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-400">Top salesperson by revenue</p>
+              {wallboardSalesTotals.topRep ? (
+                <>
+                  <p className="mt-1 text-3xl font-black text-white">{wallboardSalesTotals.topRep.name}</p>
+                  <p className="text-lg font-bold text-blue-200">{currency(wallboardSalesTotals.topRep.revenue)} | {currency(wallboardSalesTotals.topRep.valuePerLead)} per lead</p>
+                </>
+              ) : (
+                <p className="mt-2 text-lg font-bold text-slate-400">No sales data for filters.</p>
+              )}
+              <p className="mt-3 text-xs font-semibold text-slate-500">Cancellation rate will be added when real backend status history is connected.</p>
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-amber-900/70 bg-slate-900 p-4 shadow-xl">
+            <h3 className="mb-4 text-2xl font-black text-white">Critical Path Spotlight</h3>
+            <div className="space-y-3">
+              {criticalPathSpotlight.map((item) => (
+                <div key={item.id} className="rounded-lg border border-amber-800 bg-amber-950/40 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-lg font-black text-amber-100">{item.project.customer}{item.scope ? ` / ${item.scope.type}` : ''}</h4>
+                      <p className="text-sm font-bold text-amber-200">{item.label}</p>
+                    </div>
+                    <span className="rounded bg-amber-400 px-2 py-1 text-xs font-black text-amber-950">{daysBetween(todayISO(), item.project.dateSold)}d active</span>
+                  </div>
+                  <p className="mt-2 text-sm font-semibold text-amber-50">{item.detail}</p>
+                </div>
+              ))}
+              {criticalPathSpotlight.length === 0 && <div className="rounded-lg border border-green-700 bg-green-950 p-5 text-lg font-black text-green-100">No critical discussion items.</div>}
+            </div>
+          </section>
+        </div>
+      </div>
+    );
+  };
+
   const tabs = [
     { id: VIEWS.CENTER, label: 'Project Center', icon: <ClipboardList size={18} /> },
     { id: VIEWS.MEASURE, label: 'Measurement Queue', icon: <Ruler size={18} /> },
     { id: VIEWS.BOTTLENECKS, label: 'Bottlenecks', icon: <AlertTriangle size={18} /> },
     { id: VIEWS.SALES, label: 'Sales Metrics', icon: <TrendingUp size={18} /> },
     { id: VIEWS.CRITICAL, label: 'Critical Path Sync', icon: <Presentation size={18} /> },
+    { id: VIEWS.WALLBOARD, label: 'TV Wallboard', icon: <Monitor size={18} /> },
   ];
 
   return (
     <div className={`min-h-screen bg-slate-100 font-sans text-slate-900 ${meetingMode ? 'text-[17px]' : ''}`}>
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur">
+      <header className={`${wallboardDisplayMode && currentView === VIEWS.WALLBOARD ? 'hidden' : 'sticky'} top-0 z-30 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur`}>
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="flex items-center gap-2">
               <LayoutDashboard className="text-blue-600" size={26} />
-              <h1 className="text-2xl font-black tracking-tight text-slate-950">Major League Builders Dashboard</h1>
+              <h1 className="text-2xl font-black tracking-tight text-slate-950">Major League Builders Operator View</h1>
             </div>
             <p className="mt-1 text-sm text-slate-500">Project files, scope-level critical path, bottlenecks, sales metrics, and weekly review.</p>
           </div>
@@ -1104,13 +1429,14 @@ export default function MLBDashboard() {
         </nav>
       </header>
 
-      <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
-        {currentView !== VIEWS.CRITICAL && <ExecutiveSummary />}
+      <main className={`${currentView === VIEWS.WALLBOARD ? 'mx-auto max-w-[1920px] px-3 py-3' : 'mx-auto max-w-7xl space-y-6 px-4 py-6'}`}>
+        {currentView !== VIEWS.CRITICAL && currentView !== VIEWS.WALLBOARD && <ExecutiveSummary />}
         {currentView === VIEWS.CENTER && <ProjectCenterView />}
         {currentView === VIEWS.MEASURE && <MeasurementQueueView />}
         {currentView === VIEWS.BOTTLENECKS && <BottlenecksView />}
         {currentView === VIEWS.SALES && <SalesView />}
         {currentView === VIEWS.CRITICAL && <CriticalPathMeetingView />}
+        {currentView === VIEWS.WALLBOARD && <TVWallboardView />}
       </main>
 
       {selectedProject && (
