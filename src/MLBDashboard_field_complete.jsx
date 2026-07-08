@@ -504,6 +504,69 @@ const getProjectAlerts = (project) => {
   return scopeAlerts;
 };
 
+const getBookRowNotesText = (row) => {
+  const { project, scope } = row;
+  const alerts = scope ? getScopeAlerts(project, scope) : getProjectAlerts(project);
+  const specs = scope ? Object.entries(scope.specs || {}).map(([key, value]) => `${key}: ${value}`).join(' | ') : '';
+  return [
+    scope?.notes || '',
+    project.notes || '',
+    ...alerts.map((alert) => alert.type),
+    specs,
+  ].filter(Boolean).join(' ');
+};
+
+const BOOK_COLUMNS = [
+  { key: 'dateSold', label: 'Date Sold', type: 'date', sortable: true, filterable: true, getValue: ({ project }) => project.dateSold || '' },
+  { key: 'customer', label: 'Customer', type: 'text', sortable: true, filterable: true, getValue: ({ project }) => project.customer || '' },
+  { key: 'city', label: 'City', type: 'text', sortable: true, filterable: true, getValue: ({ project }) => project.city || '' },
+  { key: 'scopeType', label: 'Scope', type: 'text', sortable: true, filterable: true, getValue: ({ scope }) => scope?.type || 'No scope' },
+  { key: 'salesperson', label: 'Salesperson', type: 'text', sortable: true, filterable: true, getValue: ({ project }) => project.salesperson || '' },
+  { key: 'amount', label: 'Amount', type: 'number', sortable: true, filterable: true, getValue: ({ project }) => getRevisedAmount(project) },
+  { key: 'measureRequested', label: 'Measure Req.', type: 'date', sortable: true, filterable: true, getValue: ({ scope }) => scope?.measureRequested || '' },
+  { key: 'measureCompleted', label: 'Measure Date', type: 'date', sortable: true, filterable: true, getValue: ({ scope }) => scope?.measureCompleted || '' },
+  { key: 'dateOrdered', label: 'Order Date', type: 'date', sortable: true, filterable: true, getValue: ({ scope }) => scope?.dateOrdered || '' },
+  { key: 'materialETA', label: 'Material ETA', type: 'date', sortable: true, filterable: true, getValue: ({ scope }) => scope?.materialETA || '' },
+  { key: 'materialsIn', label: 'Materials IN', type: 'date', sortable: true, filterable: true, getValue: ({ scope }) => scope?.materialsIn || '' },
+  { key: 'scheduledInstallDate', label: 'Scheduled', type: 'date', sortable: true, filterable: true, getValue: ({ scope }) => scope?.scheduledInstallDate || '' },
+  { key: 'crew', label: 'Crew/Sub', type: 'text', sortable: true, filterable: true, getValue: ({ scope }) => scope?.crew || '' },
+  { key: 'completionDate', label: 'Completion', type: 'date', sortable: true, filterable: true, getValue: ({ scope }) => scope?.completionDate || '' },
+  { key: 'collected', label: 'Collected', type: 'boolean', sortable: true, filterable: true, getValue: ({ project }) => Boolean(project.collected) },
+  { key: 'notes', label: 'Notes', type: 'notes', sortable: true, filterable: true, getValue: (row) => getBookRowNotesText(row) },
+];
+
+const DEFAULT_BOOK_SORT = { key: 'dateSold', direction: 'asc' };
+
+const createDefaultBookColumnFilters = () => BOOK_COLUMNS.reduce((filters, column) => {
+  if (!column.filterable) return filters;
+  if (column.type === 'date') return { ...filters, [column.key]: { mode: 'any', value: '' } };
+  if (column.type === 'number') return { ...filters, [column.key]: { min: '', max: '' } };
+  return { ...filters, [column.key]: '' };
+}, {});
+
+const DEFAULT_BOOK_COLUMN_FILTERS = createDefaultBookColumnFilters();
+
+const isMissingBookValue = (value) => value === null || value === undefined || value === '';
+
+const compareBookValues = (aValue, bValue, type, direction) => {
+  const aMissing = isMissingBookValue(aValue);
+  const bMissing = isMissingBookValue(bValue);
+  if (aMissing && bMissing) return 0;
+  if (aMissing) return 1;
+  if (bMissing) return -1;
+
+  let comparison = 0;
+  if (type === 'number') {
+    comparison = Number(aValue) - Number(bValue);
+  } else if (type === 'boolean') {
+    comparison = Number(aValue) - Number(bValue);
+  } else {
+    comparison = String(aValue).localeCompare(String(bValue), undefined, { numeric: true, sensitivity: 'base' });
+  }
+
+  return direction === 'desc' ? comparison * -1 : comparison;
+};
+
 const getWallboardColumn = (project, scope) => {
   if (project.cancelled || isProjectClosed(project)) return null;
   if (scope.completionDate && !project.collected) return 'Collection / Closeout';
@@ -1133,6 +1196,8 @@ export default function MLBDashboard() {
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [projectModalState, setProjectModalState] = useState(null);
   const [expandedProjects, setExpandedProjects] = useState(() => new Set(['P-1001']));
+  const [bookSort, setBookSort] = useState(DEFAULT_BOOK_SORT);
+  const [bookColumnFilters, setBookColumnFilters] = useState(DEFAULT_BOOK_COLUMN_FILTERS);
   const currentView = navigationToView(mainArea, productionMode, bottleneckMode);
   const currentHelpMode = mainArea === MAIN_AREAS.PRODUCTION ? productionMode : mainArea === MAIN_AREAS.BOTTLENECKS ? bottleneckMode : null;
   const showHelpIcons = helpIconsEnabled && !(wallboardDisplayMode && currentView === VIEWS.WALLBOARD);
@@ -1480,6 +1545,83 @@ export default function MLBDashboard() {
     }).sort((a, b) => new Date(`${a.project.dateSold}T00:00:00`) - new Date(`${b.project.dateSold}T00:00:00`));
   }, [filteredProjects]);
 
+  const visibleBookRows = useMemo(() => {
+    const matchesFilter = (row, column) => {
+      const filter = bookColumnFilters[column.key];
+      const value = column.getValue(row);
+
+      if (column.type === 'date') {
+        if (!filter || filter.mode === 'any') return true;
+        if (filter.mode === 'missing') return isMissingBookValue(value);
+        if (!filter.value) return true;
+        if (filter.mode === 'before') return !isMissingBookValue(value) && value < filter.value;
+        if (filter.mode === 'after') return !isMissingBookValue(value) && value > filter.value;
+        return value === filter.value;
+      }
+
+      if (column.type === 'number') {
+        const min = filter?.min === '' ? null : Number(filter?.min);
+        const max = filter?.max === '' ? null : Number(filter?.max);
+        const numericValue = Number(value);
+        return (min === null || numericValue >= min) && (max === null || numericValue <= max);
+      }
+
+      if (column.type === 'boolean') {
+        if (!filter) return true;
+        return filter === 'yes' ? Boolean(value) : !Boolean(value);
+      }
+
+      if (!filter) return true;
+      return String(value || '').toLowerCase().includes(String(filter).toLowerCase());
+    };
+
+    const filteredRows = bookRows.filter((row) => BOOK_COLUMNS.every((column) => !column.filterable || matchesFilter(row, column)));
+    const sortColumn = BOOK_COLUMNS.find((column) => column.key === bookSort.key) || BOOK_COLUMNS[0];
+    return [...filteredRows].sort((a, b) => compareBookValues(sortColumn.getValue(a), sortColumn.getValue(b), sortColumn.type, bookSort.direction));
+  }, [bookRows, bookColumnFilters, bookSort]);
+
+  const hasActiveBookFilters = useMemo(() => BOOK_COLUMNS.some((column) => {
+    const filter = bookColumnFilters[column.key];
+    if (column.type === 'date') return filter?.mode !== 'any' || Boolean(filter?.value);
+    if (column.type === 'number') return Boolean(filter?.min || filter?.max);
+    return Boolean(filter);
+  }), [bookColumnFilters]);
+
+  const isDefaultBookSort = bookSort.key === DEFAULT_BOOK_SORT.key && bookSort.direction === DEFAULT_BOOK_SORT.direction;
+  const hasBookTableChanges = hasActiveBookFilters || !isDefaultBookSort;
+
+  const updateBookFilter = (key, value) => {
+    setBookColumnFilters((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateBookDateFilter = (key, field, value) => {
+    setBookColumnFilters((current) => ({
+      ...current,
+      [key]: { ...(current[key] || { mode: 'any', value: '' }), [field]: value },
+    }));
+  };
+
+  const updateBookNumberFilter = (key, field, value) => {
+    setBookColumnFilters((current) => ({
+      ...current,
+      [key]: { ...(current[key] || { min: '', max: '' }), [field]: value },
+    }));
+  };
+
+  const clearBookTableFilters = () => {
+    setBookColumnFilters(createDefaultBookColumnFilters());
+    setBookSort(DEFAULT_BOOK_SORT);
+  };
+
+  const cycleBookSort = (column) => {
+    if (!column.sortable) return;
+    setBookSort((current) => {
+      if (current.key !== column.key) return { key: column.key, direction: 'asc' };
+      if (current.direction === 'asc') return { key: column.key, direction: 'desc' };
+      return DEFAULT_BOOK_SORT;
+    });
+  };
+
   const toggleExpand = (id) => {
     setExpandedProjects((current) => {
       const next = new Set(current);
@@ -1554,7 +1696,7 @@ export default function MLBDashboard() {
       'Alerts',
     ];
 
-    const rows = bookRows.map(({ project, scope }) => {
+    const rows = visibleBookRows.map(({ project, scope }) => {
       const alerts = scope ? getScopeAlerts(project, scope) : getProjectAlerts(project);
       return [
         project.id,
@@ -1869,6 +2011,128 @@ export default function MLBDashboard() {
     );
   };
 
+  const renderBookFilterControl = (column) => {
+    const filter = bookColumnFilters[column.key];
+    const baseClass = 'mt-2 w-full rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium normal-case tracking-normal text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500';
+
+    if (column.type === 'date') {
+      const dateFilter = filter || { mode: 'any', value: '' };
+      return (
+        <div className="mt-2 space-y-1 print:hidden">
+          <label className="sr-only" htmlFor={`book-filter-${column.key}-mode`}>{column.label} date filter mode</label>
+          <select
+            id={`book-filter-${column.key}-mode`}
+            value={dateFilter.mode}
+            onChange={(event) => updateBookDateFilter(column.key, 'mode', event.target.value)}
+            className={baseClass}
+          >
+            <option value="any">Any</option>
+            <option value="on">On</option>
+            <option value="before">Before</option>
+            <option value="after">After</option>
+            <option value="missing">Missing</option>
+          </select>
+          {dateFilter.mode !== 'any' && dateFilter.mode !== 'missing' && (
+            <>
+              <label className="sr-only" htmlFor={`book-filter-${column.key}-date`}>{column.label} date filter</label>
+              <input
+                id={`book-filter-${column.key}-date`}
+                type="date"
+                value={dateFilter.value}
+                onChange={(event) => updateBookDateFilter(column.key, 'value', event.target.value)}
+                className={baseClass}
+              />
+            </>
+          )}
+        </div>
+      );
+    }
+
+    if (column.type === 'number') {
+      const numberFilter = filter || { min: '', max: '' };
+      return (
+        <div className="mt-2 grid grid-cols-2 gap-1 print:hidden">
+          <label className="sr-only" htmlFor={`book-filter-${column.key}-min`}>{column.label} minimum</label>
+          <input
+            id={`book-filter-${column.key}-min`}
+            type="number"
+            value={numberFilter.min}
+            onChange={(event) => updateBookNumberFilter(column.key, 'min', event.target.value)}
+            placeholder="Min"
+            className={baseClass}
+          />
+          <label className="sr-only" htmlFor={`book-filter-${column.key}-max`}>{column.label} maximum</label>
+          <input
+            id={`book-filter-${column.key}-max`}
+            type="number"
+            value={numberFilter.max}
+            onChange={(event) => updateBookNumberFilter(column.key, 'max', event.target.value)}
+            placeholder="Max"
+            className={baseClass}
+          />
+        </div>
+      );
+    }
+
+    if (column.type === 'boolean') {
+      return (
+        <div className="print:hidden">
+          <label className="sr-only" htmlFor={`book-filter-${column.key}`}>{column.label} filter</label>
+          <select
+            id={`book-filter-${column.key}`}
+            value={filter || ''}
+            onChange={(event) => updateBookFilter(column.key, event.target.value)}
+            className={baseClass}
+          >
+            <option value="">Any</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </div>
+      );
+    }
+
+    return (
+      <div className="print:hidden">
+        <label className="sr-only" htmlFor={`book-filter-${column.key}`}>{column.label} filter</label>
+        <input
+          id={`book-filter-${column.key}`}
+          type="search"
+          value={filter || ''}
+          onChange={(event) => updateBookFilter(column.key, event.target.value)}
+          placeholder="Filter"
+          className={baseClass}
+        />
+      </div>
+    );
+  };
+
+  const renderBookCell = (column, row, alerts) => {
+    const { project, scope } = row;
+    if (column.key === 'dateSold') return <td className="px-3 py-3 font-semibold text-slate-700" data-help-id="book-date-columns">{formatDate(project.dateSold)}</td>;
+    if (column.key === 'customer') return <td className="px-3 py-3 font-black text-slate-900">{project.customer}{project.cancelled && <div className="mt-1 text-[10px] font-black uppercase text-red-600">Cancelled {formatDate(project.cancellationDate)}</div>}</td>;
+    if (column.key === 'city') return <td className="px-3 py-3">{project.city}</td>;
+    if (column.key === 'scopeType') return <td className="px-3 py-3 font-bold">{scope?.type || 'No scope'}</td>;
+    if (column.key === 'salesperson') return <td className="px-3 py-3">{project.salesperson || '-'}</td>;
+    if (column.key === 'amount') return <td className="px-3 py-3 font-bold">{currency(getRevisedAmount(project))}</td>;
+    if (column.key === 'measureRequested') return <td className="px-3 py-3">{formatDate(scope?.measureRequested)}</td>;
+    if (column.key === 'measureCompleted') return <td className="px-3 py-3">{formatDate(scope?.measureCompleted)}</td>;
+    if (column.key === 'dateOrdered') return <td className="px-3 py-3">{formatDate(scope?.dateOrdered)}</td>;
+    if (column.key === 'materialETA') return <td className="px-3 py-3">{formatDate(scope?.materialETA)}</td>;
+    if (column.key === 'materialsIn') return <td className="px-3 py-3">{formatDate(scope?.materialsIn)}</td>;
+    if (column.key === 'scheduledInstallDate') return <td className="px-3 py-3">{formatDate(scope?.scheduledInstallDate)}</td>;
+    if (column.key === 'crew') return <td className="px-3 py-3">{scope?.crew || '-'}</td>;
+    if (column.key === 'completionDate') return <td className="px-3 py-3">{formatDate(scope?.completionDate)}</td>;
+    if (column.key === 'collected') return <td className="px-3 py-3">{project.collected ? 'Yes' : 'No'}</td>;
+    return (
+      <td className="max-w-[260px] px-3 py-3" data-help-id="book-alert-notes">
+        <div className="font-medium text-slate-700">{scope?.notes || project.notes || '-'}</div>
+        {alerts.length > 0 && <div className="mt-1 text-[10px] font-black uppercase text-red-600">{alerts.map((alert) => alert.type).join(', ')}</div>}
+        {scope && Object.keys(scope.specs || {}).length > 0 && <div className="mt-1 text-[10px] text-slate-500">{Object.entries(scope.specs).map(([key, value]) => `${key}: ${value}`).join(' | ')}</div>}
+      </td>
+    );
+  };
+
   const CriticalPathMeetingView = () => (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white text-sm shadow-sm" data-help-id="meeting-view-header">
       <div className="flex items-center justify-between border-b border-slate-200 bg-slate-900 p-4 text-white">
@@ -1970,6 +2234,18 @@ export default function MLBDashboard() {
         <div className="flex flex-wrap items-center gap-3 print:hidden">
           <WhiteboardStatusKey helpId="book-status-key" />
           <Help id="book-status-key" />
+          <button
+            type="button"
+            onClick={clearBookTableFilters}
+            disabled={!hasBookTableChanges}
+            className={`rounded-lg border px-4 py-2 text-sm font-bold transition-colors ${
+              hasBookTableChanges
+                ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+            }`}
+          >
+            Clear Table Filters
+          </button>
           <button type="button" onClick={exportCriticalPathCsv} data-help-id="book-export-csv" className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"><Download size={16} className="mr-2 inline" /> Export CSV</button><Help id="book-export-csv" />
           <button type="button" onClick={() => window.print()} data-help-id="book-print-book" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white"><Printer size={16} className="mr-2 inline" /> Print Book</button><Help id="book-print-book" />
         </div>
@@ -1977,16 +2253,43 @@ export default function MLBDashboard() {
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="min-w-[1500px] w-full text-left text-xs">
+          <table className="min-w-[1900px] w-full text-left text-xs">
             <thead className="bg-slate-100 text-[11px] font-black uppercase tracking-wide text-slate-600">
               <tr>
-                {['Date Sold', 'Customer', 'City', 'Scope', 'Salesperson', 'Amount', 'Measure Req.', 'Measure Date', 'Order Date', 'Material ETA', 'Materials IN', 'Scheduled', 'Crew/Sub', 'Completion', 'Collected', 'Notes'].map((heading) => (
-                  <th key={heading} className="border-b border-slate-200 px-3 py-3">{heading}</th>
+                {BOOK_COLUMNS.map((column) => (
+                  <th key={column.key} className="min-w-[118px] border-b border-slate-200 px-3 py-3 align-top">
+                    <button
+                      type="button"
+                      onClick={() => cycleBookSort(column)}
+                      aria-label={`Sort Critical Path Book by ${column.label}${bookSort.key === column.key ? `, currently ${bookSort.direction === 'asc' ? 'ascending' : 'descending'}` : ''}`}
+                      className="flex w-full items-center justify-between gap-2 rounded text-left font-black uppercase tracking-wide text-slate-700 transition-colors hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 print:hidden"
+                    >
+                      <span>{column.label}</span>
+                      <span className={`text-[10px] ${bookSort.key === column.key ? 'text-blue-700' : 'text-slate-400'}`}>
+                        {bookSort.key === column.key ? (bookSort.direction === 'asc' ? '▲' : '▼') : '↕'}
+                      </span>
+                    </button>
+                    <span className="hidden print:inline">{column.label}</span>
+                    {column.filterable && renderBookFilterControl(column)}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {bookRows.map(({ project, scope, id }) => {
+              {visibleBookRows.length === 0 ? (
+                <tr>
+                  <td colSpan={BOOK_COLUMNS.length} className="px-4 py-10 text-center">
+                    <p className="text-sm font-bold text-slate-700">No Critical Path Book rows match the current table filters.</p>
+                    <button
+                      type="button"
+                      onClick={clearBookTableFilters}
+                      className="mt-3 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 print:hidden"
+                    >
+                      Clear Table Filters
+                    </button>
+                  </td>
+                </tr>
+              ) : visibleBookRows.map(({ project, scope, id }) => {
                 const alerts = scope ? getScopeAlerts(project, scope) : getProjectAlerts(project);
                 return (
                   <tr
@@ -1999,26 +2302,7 @@ export default function MLBDashboard() {
                     data-help-id="book-open-file"
                     className={`${alerts.length ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-blue-50/40'} cursor-pointer align-top transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500`}
                   >
-                    <td className="px-3 py-3 font-semibold text-slate-700" data-help-id="book-date-columns">{formatDate(project.dateSold)}</td>
-                    <td className="px-3 py-3 font-black text-slate-900">{project.customer}{project.cancelled && <div className="mt-1 text-[10px] font-black uppercase text-red-600">Cancelled {formatDate(project.cancellationDate)}</div>}</td>
-                    <td className="px-3 py-3">{project.city}</td>
-                    <td className="px-3 py-3 font-bold">{scope?.type || 'No scope'}</td>
-                    <td className="px-3 py-3">{project.salesperson || '-'}</td>
-                    <td className="px-3 py-3 font-bold">{currency(getRevisedAmount(project))}</td>
-                    <td className="px-3 py-3">{formatDate(scope?.measureRequested)}</td>
-                    <td className="px-3 py-3">{formatDate(scope?.measureCompleted)}</td>
-                    <td className="px-3 py-3">{formatDate(scope?.dateOrdered)}</td>
-                    <td className="px-3 py-3">{formatDate(scope?.materialETA)}</td>
-                    <td className="px-3 py-3">{formatDate(scope?.materialsIn)}</td>
-                    <td className="px-3 py-3">{formatDate(scope?.scheduledInstallDate)}</td>
-                    <td className="px-3 py-3">{scope?.crew || '-'}</td>
-                    <td className="px-3 py-3">{formatDate(scope?.completionDate)}</td>
-                    <td className="px-3 py-3">{project.collected ? 'Yes' : 'No'}</td>
-                    <td className="max-w-[260px] px-3 py-3" data-help-id="book-alert-notes">
-                      <div className="font-medium text-slate-700">{scope?.notes || project.notes || '-'}</div>
-                      {alerts.length > 0 && <div className="mt-1 text-[10px] font-black uppercase text-red-600">{alerts.map((alert) => alert.type).join(', ')}</div>}
-                      {scope && Object.keys(scope.specs || {}).length > 0 && <div className="mt-1 text-[10px] text-slate-500">{Object.entries(scope.specs).map(([key, value]) => `${key}: ${value}`).join(' | ')}</div>}
-                    </td>
+                    {BOOK_COLUMNS.map((column) => <React.Fragment key={`${id}-${column.key}`}>{renderBookCell(column, { project, scope, id }, alerts)}</React.Fragment>)}
                   </tr>
                 );
               })}
