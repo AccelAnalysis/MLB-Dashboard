@@ -1198,6 +1198,8 @@ export default function MLBDashboard() {
   const [expandedProjects, setExpandedProjects] = useState(() => new Set(['P-1001']));
   const [bookSort, setBookSort] = useState(DEFAULT_BOOK_SORT);
   const [bookColumnFilters, setBookColumnFilters] = useState(DEFAULT_BOOK_COLUMN_FILTERS);
+  const [bookSearch, setBookSearch] = useState('');
+  const [bookFiltersOpen, setBookFiltersOpen] = useState(false);
   const currentView = navigationToView(mainArea, productionMode, bottleneckMode);
   const currentHelpMode = mainArea === MAIN_AREAS.PRODUCTION ? productionMode : mainArea === MAIN_AREAS.BOTTLENECKS ? bottleneckMode : null;
   const showHelpIcons = helpIconsEnabled && !(wallboardDisplayMode && currentView === VIEWS.WALLBOARD);
@@ -1336,6 +1338,11 @@ export default function MLBDashboard() {
       return regionMatch && periodMatch;
     });
   }, [projects, regionFilter, periodFilter, customPeriodStart, customPeriodEnd]);
+
+  const bookBaseProjects = useMemo(
+    () => projects.filter((project) => regionFilter === 'All' || project.region === regionFilter),
+    [projects, regionFilter],
+  );
 
   const flatScopes = useMemo(
     () => filteredProjects.flatMap((project) => project.scopes.map((scope) => ({ project, scope }))),
@@ -1537,13 +1544,13 @@ export default function MLBDashboard() {
   }, [filteredProjects]);
 
   const bookRows = useMemo(() => {
-    return filteredProjects.flatMap((project) => {
+    return bookBaseProjects.flatMap((project) => {
       if (project.scopes.length === 0) {
         return [{ project, scope: null, id: `${project.id}-no-scope` }];
       }
       return project.scopes.map((scope) => ({ project, scope, id: `${project.id}-${scope.id}` }));
     }).sort((a, b) => new Date(`${a.project.dateSold}T00:00:00`) - new Date(`${b.project.dateSold}T00:00:00`));
-  }, [filteredProjects]);
+  }, [bookBaseProjects]);
 
   const visibleBookRows = useMemo(() => {
     const matchesFilter = (row, column) => {
@@ -1575,20 +1582,47 @@ export default function MLBDashboard() {
       return String(value || '').toLowerCase().includes(String(filter).toLowerCase());
     };
 
-    const filteredRows = bookRows.filter((row) => BOOK_COLUMNS.every((column) => !column.filterable || matchesFilter(row, column)));
+    const normalizedSearch = bookSearch.trim().toLowerCase();
+    const matchesSearch = (row) => {
+      if (!normalizedSearch) return true;
+      const searchText = [
+        row.project.customer,
+        row.project.city,
+        row.scope?.type,
+        row.project.salesperson,
+        row.scope?.crew,
+        getBookRowNotesText(row),
+        currency(getRevisedAmount(row.project)),
+        row.project.dateSold,
+        row.scope?.measureRequested,
+        row.scope?.measureCompleted,
+        row.scope?.dateOrdered,
+        row.scope?.materialETA,
+        row.scope?.materialsIn,
+        row.scope?.scheduledInstallDate,
+        row.scope?.completionDate,
+      ].filter(Boolean).join(' ').toLowerCase();
+      return searchText.includes(normalizedSearch);
+    };
+
+    const filteredRows = bookRows.filter((row) => (
+      matchesSearch(row)
+      && BOOK_COLUMNS.every((column) => !column.filterable || matchesFilter(row, column))
+    ));
     const sortColumn = BOOK_COLUMNS.find((column) => column.key === bookSort.key) || BOOK_COLUMNS[0];
     return [...filteredRows].sort((a, b) => compareBookValues(sortColumn.getValue(a), sortColumn.getValue(b), sortColumn.type, bookSort.direction));
-  }, [bookRows, bookColumnFilters, bookSort]);
+  }, [bookRows, bookColumnFilters, bookSort, bookSearch]);
 
   const hasActiveBookFilters = useMemo(() => BOOK_COLUMNS.some((column) => {
     const filter = bookColumnFilters[column.key];
-    if (column.type === 'date') return filter?.mode !== 'any' || Boolean(filter?.value);
+    if (column.type === 'date') return filter?.mode === 'missing' || Boolean(filter?.value);
     if (column.type === 'number') return Boolean(filter?.min || filter?.max);
     return Boolean(filter);
   }), [bookColumnFilters]);
 
   const isDefaultBookSort = bookSort.key === DEFAULT_BOOK_SORT.key && bookSort.direction === DEFAULT_BOOK_SORT.direction;
-  const hasBookTableChanges = hasActiveBookFilters || !isDefaultBookSort;
+  const hasBookSearch = bookSearch.trim().length > 0;
+  const hasBookTableChanges = hasActiveBookFilters || hasBookSearch || !isDefaultBookSort;
 
   const updateBookFilter = (key, value) => {
     setBookColumnFilters((current) => ({ ...current, [key]: value }));
@@ -1611,6 +1645,64 @@ export default function MLBDashboard() {
   const clearBookTableFilters = () => {
     setBookColumnFilters(createDefaultBookColumnFilters());
     setBookSort(DEFAULT_BOOK_SORT);
+    setBookSearch('');
+  };
+
+  const activeBookFilterChips = useMemo(() => {
+    const chips = [];
+
+    if (bookSearch.trim()) {
+      chips.push({ id: 'search', type: 'search', label: `Search: ${bookSearch.trim()}` });
+    }
+
+    BOOK_COLUMNS.forEach((column) => {
+      const filter = bookColumnFilters[column.key];
+      if (column.type === 'date') {
+        if (!filter || filter.mode === 'any' || (filter.mode !== 'missing' && !filter.value)) return;
+        const modeLabel = filter.mode === 'on' ? 'On' : filter.mode === 'before' ? 'Before' : filter.mode === 'after' ? 'After' : 'Missing';
+        const valueLabel = filter.mode === 'missing' || !filter.value ? '' : ` ${formatDate(filter.value)}`;
+        chips.push({ id: `filter-${column.key}`, type: 'filter', key: column.key, label: `${column.label}: ${modeLabel}${valueLabel}` });
+        return;
+      }
+
+      if (column.type === 'number') {
+        if (!filter?.min && !filter?.max) return;
+        const minLabel = filter.min ? `${currency(filter.min)}+` : '';
+        const maxLabel = filter.max ? `up to ${currency(filter.max)}` : '';
+        chips.push({ id: `filter-${column.key}`, type: 'filter', key: column.key, label: `${column.label}: ${[minLabel, maxLabel].filter(Boolean).join(' ')}` });
+        return;
+      }
+
+      if (column.type === 'boolean') {
+        if (!filter) return;
+        chips.push({ id: `filter-${column.key}`, type: 'filter', key: column.key, label: `${column.label}: ${filter === 'yes' ? 'Yes' : 'No'}` });
+        return;
+      }
+
+      if (filter) {
+        chips.push({ id: `filter-${column.key}`, type: 'filter', key: column.key, label: `${column.label}: ${filter}` });
+      }
+    });
+
+    if (!isDefaultBookSort) {
+      const sortColumn = BOOK_COLUMNS.find((column) => column.key === bookSort.key);
+      chips.push({ id: 'sort', type: 'sort', label: `Sort: ${sortColumn?.label || bookSort.key} ${bookSort.direction === 'asc' ? 'ascending' : 'descending'}` });
+    }
+
+    return chips;
+  }, [bookSearch, bookColumnFilters, bookSort, isDefaultBookSort]);
+
+  const clearBookFilterChip = (chip) => {
+    if (chip.type === 'search') {
+      setBookSearch('');
+      return;
+    }
+    if (chip.type === 'sort') {
+      setBookSort(DEFAULT_BOOK_SORT);
+      return;
+    }
+    const defaultFilters = createDefaultBookColumnFilters();
+    setBookColumnFilters((current) => ({ ...current, [chip.key]: defaultFilters[chip.key] }));
   };
 
   const cycleBookSort = (column) => {
@@ -2013,12 +2105,12 @@ export default function MLBDashboard() {
 
   const renderBookFilterControl = (column) => {
     const filter = bookColumnFilters[column.key];
-    const baseClass = 'mt-2 w-full rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium normal-case tracking-normal text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500';
+    const baseClass = 'w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500';
 
     if (column.type === 'date') {
       const dateFilter = filter || { mode: 'any', value: '' };
       return (
-        <div className="mt-2 space-y-1 print:hidden">
+        <div className="space-y-2">
           <label className="sr-only" htmlFor={`book-filter-${column.key}-mode`}>{column.label} date filter mode</label>
           <select
             id={`book-filter-${column.key}-mode`}
@@ -2051,32 +2143,36 @@ export default function MLBDashboard() {
     if (column.type === 'number') {
       const numberFilter = filter || { min: '', max: '' };
       return (
-        <div className="mt-2 grid grid-cols-2 gap-1 print:hidden">
-          <label className="sr-only" htmlFor={`book-filter-${column.key}-min`}>{column.label} minimum</label>
-          <input
-            id={`book-filter-${column.key}-min`}
-            type="number"
-            value={numberFilter.min}
-            onChange={(event) => updateBookNumberFilter(column.key, 'min', event.target.value)}
-            placeholder="Min"
-            className={baseClass}
-          />
-          <label className="sr-only" htmlFor={`book-filter-${column.key}-max`}>{column.label} maximum</label>
-          <input
-            id={`book-filter-${column.key}-max`}
-            type="number"
-            value={numberFilter.max}
-            onChange={(event) => updateBookNumberFilter(column.key, 'max', event.target.value)}
-            placeholder="Max"
-            className={baseClass}
-          />
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block text-[11px] font-bold uppercase tracking-wide text-slate-500" htmlFor={`book-filter-${column.key}-min`}>
+            Min
+            <input
+              id={`book-filter-${column.key}-min`}
+              type="number"
+              value={numberFilter.min}
+              onChange={(event) => updateBookNumberFilter(column.key, 'min', event.target.value)}
+              placeholder="0"
+              className={`${baseClass} mt-1`}
+            />
+          </label>
+          <label className="block text-[11px] font-bold uppercase tracking-wide text-slate-500" htmlFor={`book-filter-${column.key}-max`}>
+            Max
+            <input
+              id={`book-filter-${column.key}-max`}
+              type="number"
+              value={numberFilter.max}
+              onChange={(event) => updateBookNumberFilter(column.key, 'max', event.target.value)}
+              placeholder="Any"
+              className={`${baseClass} mt-1`}
+            />
+          </label>
         </div>
       );
     }
 
     if (column.type === 'boolean') {
       return (
-        <div className="print:hidden">
+        <div>
           <label className="sr-only" htmlFor={`book-filter-${column.key}`}>{column.label} filter</label>
           <select
             id={`book-filter-${column.key}`}
@@ -2093,7 +2189,7 @@ export default function MLBDashboard() {
     }
 
     return (
-      <div className="print:hidden">
+      <div>
         <label className="sr-only" htmlFor={`book-filter-${column.key}`}>{column.label} filter</label>
         <input
           id={`book-filter-${column.key}`}
@@ -2221,35 +2317,107 @@ export default function MLBDashboard() {
     <div className="space-y-4 printable-book">
       <div className="hidden print:block">
         <h1 className="text-2xl font-black">Major League Builders Critical Path Book</h1>
-        <p className="mt-1 text-sm">Printed {new Date().toLocaleDateString('en-US')} | Region: {regionFilter} | Period: {periodLabel}</p>
+        <p className="mt-1 text-sm">Printed {new Date().toLocaleDateString('en-US')} | Region: {regionFilter} | Showing {visibleBookRows.length} of {bookRows.length} rows</p>
         <div className="mt-3">
           <WhiteboardStatusKey />
         </div>
       </div>
-      <div className="flex flex-col justify-between gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center" data-help-id="book-view-header">
+      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" data-help-id="book-view-header">
         <div>
           <h2 className="flex items-center text-xl font-black text-slate-900"><BookOpen size={22} className="mr-2 text-blue-600" /> Critical Path Book<Help id="book-view-header" /></h2>
           <p className="text-sm text-slate-500">Book-style one-row-per-scope replacement for the manual production ledger.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-3 print:hidden">
+        <div className="mt-4 flex flex-wrap items-center gap-3 print:hidden">
           <WhiteboardStatusKey helpId="book-status-key" />
           <Help id="book-status-key" />
-          <button
-            type="button"
-            onClick={clearBookTableFilters}
-            disabled={!hasBookTableChanges}
-            className={`rounded-lg border px-4 py-2 text-sm font-bold transition-colors ${
-              hasBookTableChanges
-                ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
-            }`}
-          >
-            Clear Table Filters
-          </button>
-          <button type="button" onClick={exportCriticalPathCsv} data-help-id="book-export-csv" className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"><Download size={16} className="mr-2 inline" /> Export CSV</button><Help id="book-export-csv" />
-          <button type="button" onClick={() => window.print()} data-help-id="book-print-book" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white"><Printer size={16} className="mr-2 inline" /> Print Book</button><Help id="book-print-book" />
         </div>
       </div>
+
+      <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm print:hidden">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-1 flex-col gap-3 md:flex-row md:items-center">
+            <label className="min-w-[260px] flex-1 text-sm font-bold text-slate-700" htmlFor="book-search">
+              Search Book
+              <input
+                id="book-search"
+                type="search"
+                value={bookSearch}
+                onChange={(event) => setBookSearch(event.target.value)}
+                placeholder="Customer, scope, crew, notes, alerts..."
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </label>
+            <div className="text-sm font-bold text-slate-600">
+              Showing <span className="text-slate-950">{visibleBookRows.length}</span> of <span className="text-slate-950">{bookRows.length}</span> rows
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setBookFiltersOpen((open) => !open)}
+              aria-expanded={bookFiltersOpen}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50"
+            >
+              Table Filters
+            </button>
+            {hasBookTableChanges && (
+              <button
+                type="button"
+                onClick={clearBookTableFilters}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                Clear Filters
+              </button>
+            )}
+            <button type="button" onClick={exportCriticalPathCsv} data-help-id="book-export-csv" className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"><Download size={16} className="mr-2 inline" /> Export CSV</button><Help id="book-export-csv" />
+            <button type="button" onClick={() => window.print()} data-help-id="book-print-book" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white"><Printer size={16} className="mr-2 inline" /> Print Book</button><Help id="book-print-book" />
+          </div>
+        </div>
+
+        {activeBookFilterChips.length > 0 && (
+          <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3" aria-label="Active Book filters">
+            {activeBookFilterChips.map((chip) => (
+              <button
+                key={chip.id}
+                type="button"
+                onClick={() => clearBookFilterChip(chip)}
+                className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-bold text-blue-800 transition-colors hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                aria-label={`Clear ${chip.label}`}
+              >
+                <span>{chip.label}</span>
+                <span aria-hidden="true">x</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {bookFiltersOpen && (
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm print:hidden">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wide text-slate-700">Table Filters</h3>
+              <p className="text-sm text-slate-500">Narrow the Critical Path Book without changing the rest of the dashboard.</p>
+            </div>
+            {hasActiveBookFilters && (
+              <button type="button" onClick={() => setBookColumnFilters(createDefaultBookColumnFilters())} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                Clear Panel Filters
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {BOOK_COLUMNS.map((column) => (
+              <div key={column.key} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-600">
+                  {column.label}
+                </label>
+                {renderBookFilterControl(column)}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
@@ -2270,7 +2438,6 @@ export default function MLBDashboard() {
                       </span>
                     </button>
                     <span className="hidden print:inline">{column.label}</span>
-                    {column.filterable && renderBookFilterControl(column)}
                   </th>
                 ))}
               </tr>
@@ -2561,14 +2728,16 @@ export default function MLBDashboard() {
               </select>
               <Help id="global-region-filter" />
             </label>
-            <label data-help-id="global-period-filter" className="text-sm font-semibold text-slate-600">
-              Period
-              <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)} title={periodLabel} className="ml-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm">
-                {PERIODS.map((period) => <option key={period} value={period}>{period}</option>)}
-              </select>
-              <Help id="global-period-filter" />
-            </label>
-            {periodFilter === 'Custom' && (
+            {currentView !== VIEWS.BOOK && (
+              <label data-help-id="global-period-filter" className="text-sm font-semibold text-slate-600">
+                Period
+                <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)} title={periodLabel} className="ml-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm">
+                  {PERIODS.map((period) => <option key={period} value={period}>{period}</option>)}
+                </select>
+                <Help id="global-period-filter" />
+              </label>
+            )}
+            {currentView !== VIEWS.BOOK && periodFilter === 'Custom' && (
               <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600" data-help-id="global-period-filter">
                 <label>
                   Start
