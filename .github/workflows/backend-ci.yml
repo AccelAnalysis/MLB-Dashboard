@@ -20,12 +20,6 @@ jobs:
   validate:
     if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
-    env:
-      VITE_DATA_PROVIDER: local
-      VITE_AUTH_MODE: local
-      LOCAL_OWNER_EMAIL: phase6-owner@example.invalid
-      LOCAL_OWNER_PASSWORD: phase6-ci-password-2026-only
-      LOCAL_OWNER_NAME: Phase 6 CI Owner
 
     steps:
       - name: Checkout
@@ -35,44 +29,14 @@ jobs:
           fetch-depth: 1
           show-progress: false
 
-      - name: Apply metric integrity source edits
-        run: |
-          set +e
-          {
-            echo "Metric patch diagnostic generated $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo "--- PREPROCESSOR ---"
-            python3 scripts/preprocess-metric-patch.py
-            preprocess_status=$?
-            echo "Preprocessor exit: $preprocess_status"
-            echo "--- PATCH ---"
-            if [ "$preprocess_status" -eq 0 ]; then
-              node scripts/apply-metric-integrity-patch.mjs
-              patch_status=$?
-            else
-              patch_status=$preprocess_status
-            fi
-            echo "Patch exit: $patch_status"
-          } > project-docs/metric-patch-error.txt 2>&1
-          set -e
+      - name: Finalize metric integrity integration
+        run: node scripts/finalize-metric-integrity.mjs
 
-          cat project-docs/metric-patch-error.txt
-
-          if [ "$patch_status" -ne 0 ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add project-docs/metric-patch-error.txt
-            git commit -m "Record current metric patch diagnostic"
-            git push origin HEAD:test/metric-corrections
-            exit "$patch_status"
-          fi
-
-          rm -f project-docs/metric-patch-error.txt
-
-      - name: Commit patched application files
+      - name: Commit final integration correction
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src package.json schemas project-docs/metric-patch-error.txt
+          git add src/MLBDashboard_field_complete.jsx
           git diff --cached --check
-          git commit -m "Apply metric integrity corrections"
+          git commit -m "Align metric integrity exports"
           git push origin HEAD:test/metric-corrections
