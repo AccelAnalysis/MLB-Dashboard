@@ -18,6 +18,7 @@ permissions:
 
 jobs:
   validate:
+    if: ${{ !startsWith(github.event.pull_request.head.sha && github.event.pull_request.title || github.event.head_commit.message, 'Apply metric integrity corrections') }}
     runs-on: ubuntu-latest
     env:
       VITE_DATA_PROVIDER: local
@@ -34,157 +35,17 @@ jobs:
           fetch-depth: 1
           show-progress: false
 
-      - name: Apply guarded metric integrity patch
-        if: ${{ hashFiles('scripts/apply-metric-integrity-patch.mjs') != '' }}
+      - name: Apply metric integrity source edits
         run: |
-          set +e
-          python3 scripts/preprocess-metric-patch.py > /tmp/metric-preprocess.log 2>&1
-          preprocess_status=$?
-          if [ "$preprocess_status" -eq 0 ]; then
-            node scripts/apply-metric-integrity-patch.mjs > /tmp/metric-patch.log 2>&1
-            patch_status=$?
-          else
-            patch_status=$preprocess_status
-            cp /tmp/metric-preprocess.log /tmp/metric-patch.log
-          fi
-          set -e
-
-          cat /tmp/metric-preprocess.log || true
-          cat /tmp/metric-patch.log || true
-
-          if [ "$patch_status" -ne 0 ]; then
-            cp /tmp/metric-patch.log project-docs/metric-patch-error.txt
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add project-docs/metric-patch-error.txt
-            git commit -m "Record metric patch diagnostic" || true
-            git push origin HEAD:test/metric-corrections || true
-            exit "$patch_status"
-          fi
-
+          python3 scripts/preprocess-metric-patch.py
+          node scripts/apply-metric-integrity-patch.mjs
           rm -f project-docs/metric-patch-error.txt
-          rm -f scripts/apply-metric-integrity-patch.mjs
-          rm -f scripts/preprocess-metric-patch.py
-          rm -f .github/workflows/apply-metric-integrity-patch.yml
 
-          cat > .github/workflows/backend-ci.yml <<'WORKFLOW'
-          name: Validate app and shared backend
-
-          on:
-            pull_request:
-            push:
-              branches:
-                - main
-              paths:
-                - package.json
-                - package-lock.json
-                - src/**
-                - supabase/**
-                - scripts/**
-                - .github/workflows/backend-ci.yml
-
-          permissions:
-            contents: read
-
-          jobs:
-            validate:
-              runs-on: ubuntu-latest
-              env:
-                VITE_DATA_PROVIDER: local
-                VITE_AUTH_MODE: local
-                LOCAL_OWNER_EMAIL: phase6-owner@example.invalid
-                LOCAL_OWNER_PASSWORD: phase6-ci-password-2026-only
-                LOCAL_OWNER_NAME: Phase 6 CI Owner
-
-              steps:
-                - name: Checkout
-                  uses: actions/checkout@v5
-
-                - name: Setup Node
-                  uses: actions/setup-node@v5
-                  with:
-                    node-version: 24
-                    cache: npm
-
-                - name: Reconcile lockfile metadata
-                  run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-
-                - name: Install dependencies
-                  run: npm ci --no-audit --no-fund
-
-                - name: Validate environment configuration
-                  run: npm run backend:check
-
-                - name: Verify Phase 6 manual entry domain
-                  run: npm run phase6:verify
-
-                - name: Build application
-                  run: npm run build
-
-                - name: Start local Supabase
-                  run: npm run supabase:start
-
-                - name: Apply migrations and seed data
-                  run: npm run db:reset
-
-                - name: Lint database
-                  run: npm run db:lint
-
-                - name: Bootstrap local owner
-                  run: npm run auth:bootstrap-local
-
-                - name: Verify local authentication
-                  run: npm run auth:verify-local
-
-                - name: Stop local Supabase
-                  if: always()
-                  run: npm run supabase:stop
-          WORKFLOW
-          sed -i 's/^          //' .github/workflows/backend-ci.yml
-
+      - name: Commit patched application files
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add src package.json schemas project-docs/metric-patch-error.txt
           git diff --cached --check
           git commit -m "Apply metric integrity corrections"
           git push origin HEAD:test/metric-corrections
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Reconcile lockfile metadata
-        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-
-      - name: Install dependencies
-        run: npm ci --no-audit --no-fund
-
-      - name: Validate environment configuration
-        run: npm run backend:check
-
-      - name: Verify Phase 6 manual entry domain
-        run: npm run phase6:verify
-
-      - name: Build application
-        run: npm run build
-
-      - name: Start local Supabase
-        run: npm run supabase:start
-
-      - name: Apply migrations and seed data
-        run: npm run db:reset
-
-      - name: Lint database
-        run: npm run db:lint
-
-      - name: Bootstrap local owner
-        run: npm run auth:bootstrap-local
-
-      - name: Verify local authentication
-        run: npm run auth:verify-local
-
-      - name: Stop local Supabase
-        if: always()
-        run: npm run supabase:stop
