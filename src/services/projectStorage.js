@@ -17,6 +17,11 @@ const downloadTextFile = (filename, content, type) => {
   URL.revokeObjectURL(url);
 };
 
+const canPersistLegacyProjects = () => (
+  typeof window === 'undefined'
+  || window.__MLB_LEGACY_CAN_WRITE__ !== false
+);
+
 export const normalizeProjects = (projects) => normalizeLegacyProjects(projects);
 
 export const loadProjects = (fallbackProjects = []) => {
@@ -32,11 +37,15 @@ export const loadProjects = (fallbackProjects = []) => {
 };
 
 export const saveProjects = (projects) => {
+  if (!canPersistLegacyProjects()) return false;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeProjects(projects)));
+  return true;
 };
 
 export const resetProjects = () => {
+  if (!canPersistLegacyProjects()) return false;
   localStorage.removeItem(STORAGE_KEY);
+  return true;
 };
 
 export const exportProjectsJson = (projects) => {
@@ -63,5 +72,7 @@ export const importProjectsJson = async (file) => {
   return normalized;
 };
 
-// TODO: Replace localStorage calls above with the selected shared backend after
-// authentication, roles, audit requirements, and migration ownership are approved.
+// The nested project cache remains a compatibility layer for the large legacy
+// dashboard component. Phase 5 blocks writes for roles that cannot safely
+// persist the complete legacy dataset. The normalized shared repository remains
+// the production source of truth.
