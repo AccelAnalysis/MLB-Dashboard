@@ -16,6 +16,14 @@ const ensureNoError = (response, operation) => {
   });
 };
 
+const stableSerialize = (value) => {
+  if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+};
+
 export class SupabaseProductionRepository {
   constructor(client = getSupabaseClient()) {
     this.client = client;
@@ -95,6 +103,27 @@ export class SupabaseProductionRepository {
     return { dataset, validation };
   }
 
+  async getChangedRecords(collection, definition, records, precise) {
+    if (!precise || !records.length) return records;
+
+    const response = await this.client
+      .from(definition.table)
+      .select('*')
+      .in('id', records.map((record) => record.id));
+    const currentRows = ensureNoError(response, `compare:${definition.table}`) || [];
+    const currentById = new Map(
+      currentRows.map((row) => {
+        const record = definition.fromRow(row);
+        return [record.id, record];
+      }),
+    );
+
+    return records.filter((record) => {
+      const current = currentById.get(record.id);
+      return !current || stableSerialize(record) !== stableSerialize(current);
+    });
+  }
+
   async saveDataset(dataset, options = {}) {
     const validation = validateProductionDataset(dataset);
     if (!validation.valid) {
@@ -114,11 +143,15 @@ export class SupabaseProductionRepository {
       ? SUPABASE_SAVE_ORDER.filter((collection) => requestedCollections.has(collection))
       : SUPABASE_SAVE_ORDER;
     const counts = {};
+    const submittedCounts = {};
 
     for (const collection of saveOrder) {
-      const records = Array.isArray(dataset[collection]) ? dataset[collection] : [];
-      counts[collection] = records.length;
-      if (!records.length) continue;
+      const allRecords = Array.isArray(dataset[collection]) ? dataset[collection] : [];
+      counts[collection] = allRecords.length;
+      if (!allRecords.length) {
+        submittedCounts[collection] = 0;
+        continue;
+      }
 
       const definition = SUPABASE_COLLECTIONS[collection];
       if (!definition) {
@@ -129,6 +162,15 @@ export class SupabaseProductionRepository {
           recoverable: false,
         });
       }
+
+      const records = await this.getChangedRecords(
+        collection,
+        definition,
+        allRecords,
+        Boolean(requestedCollections),
+      );
+      submittedCounts[collection] = records.length;
+      if (!records.length) continue;
 
       const rows = records.map((record) => definition.toRow({
         ...record,
@@ -149,6 +191,7 @@ export class SupabaseProductionRepository {
       provider: this.provider,
       savedAt: new Date().toISOString(),
       counts,
+      submittedCounts,
       collections: saveOrder,
       validation,
       destructiveChangesApplied: false,
