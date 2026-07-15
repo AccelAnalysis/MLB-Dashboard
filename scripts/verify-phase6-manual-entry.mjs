@@ -60,23 +60,28 @@ assert.ok(validation.errors.some((message) => message.includes('cannot be before
 draft.scopes[0].dates.completed = '2026-07-15';
 
 const dataset = createEmptyProductionDataset();
-const customer = createCustomer({ displayName: draft.customer.displayName, phone: draft.customer.phone });
-const lead = createLead({ customerId: customer.id, source: draft.lead.source, status: 'sold' });
-const job = createJob({
-  customerId: customer.id,
-  leadId: lead.id,
-  region: 'Virginia',
-  locationName: 'Carrollton',
-  soldDate: '2026-07-01',
-  originalContractAmount: 25000,
-  finalAmount: 26500,
-  balanceDue: 26500,
-  productionStage: PRODUCTION_STAGE.COMPLETED,
-});
+const customer = createCustomer({ displayName: draft.customer.displayName, phone: draft.customer.phone, revision: 2 });
+const lead = createLead({ customerId: customer.id, source: draft.lead.source, status: 'sold', revision: 3 });
+const job = {
+  ...createJob({
+    customerId: customer.id,
+    leadId: lead.id,
+    region: 'Virginia',
+    locationName: 'Carrollton',
+    soldDate: '2026-07-01',
+    originalContractAmount: 25000,
+    finalAmount: 26500,
+    balanceDue: 26500,
+    productionStage: PRODUCTION_STAGE.COMPLETED,
+    revision: 4,
+  }),
+  thankYouSent: true,
+};
 const activeScope = createWorkScope({
   jobId: job.id,
   category: 'Roofs',
   productionStage: PRODUCTION_STAGE.COMPLETED,
+  revision: 5,
 });
 const archivedScope = createWorkScope({
   jobId: job.id,
@@ -89,6 +94,7 @@ const approvedOrder = createChangeOrder({
   status: CHANGE_ORDER_STATUS.APPROVED,
   description: 'Approved decking upgrade',
   amount: 1500,
+  revision: 6,
 });
 
 dataset.customers.push(customer);
@@ -111,5 +117,16 @@ const legacy = convertProductionToLegacyProjects(normalized);
 assert.equal(legacy.length, 1);
 assert.equal(legacy[0].scopes.length, 1);
 assert.equal(legacy[0].scopes[0].type, 'Roofs');
+assert.equal(legacy[0].thankYouSent, true);
+assert.equal(legacy[0]._production.jobId, job.id);
+assert.equal(legacy[0]._production.jobRevision, 4);
+assert.equal(legacy[0]._production.customerId, customer.id);
+assert.equal(legacy[0]._production.customerRevision, 2);
+assert.equal(legacy[0]._production.leadId, lead.id);
+assert.equal(legacy[0]._production.leadRevision, 3);
+assert.equal(legacy[0].scopes[0]._production.scopeId, activeScope.id);
+assert.equal(legacy[0].scopes[0]._production.revision, 5);
+assert.equal(legacy[0].changeOrders[0]._production.changeOrderId, approvedOrder.id);
+assert.equal(legacy[0].changeOrders[0]._production.revision, 6);
 
-console.log('Phase 6 manual entry verification passed.');
+console.log('Phase 6 normalized project-file verification passed.');
