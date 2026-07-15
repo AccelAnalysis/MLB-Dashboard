@@ -26,27 +26,27 @@
   overflow-wrap: anywhere;
 }
 
-#root [class*="bg-slate-900"] h1,
-#root [class*="bg-slate-900"] h2,
-#root [class*="bg-slate-900"] h3,
-#root [class*="bg-slate-900"] h4,
-#root [class*="bg-slate-900"] p,
-#root [class*="bg-slate-950"] h1,
-#root [class*="bg-slate-950"] h2,
-#root [class*="bg-slate-950"] h3,
-#root [class*="bg-slate-950"] h4,
-#root [class*="bg-slate-950"] p,
-#root [class*="bg-blue-900"] h1,
-#root [class*="bg-blue-900"] h2,
-#root [class*="bg-blue-900"] h3,
-#root [class*="bg-blue-900"] h4,
-#root [class*="bg-blue-900"] p {
+#root [class*="bg-slate-900"]:not([class*="/"]) h1,
+#root [class*="bg-slate-900"]:not([class*="/"]) h2,
+#root [class*="bg-slate-900"]:not([class*="/"]) h3,
+#root [class*="bg-slate-900"]:not([class*="/"]) h4,
+#root [class*="bg-slate-900"]:not([class*="/"]) p,
+#root [class*="bg-slate-950"]:not([class*="/"]) h1,
+#root [class*="bg-slate-950"]:not([class*="/"]) h2,
+#root [class*="bg-slate-950"]:not([class*="/"]) h3,
+#root [class*="bg-slate-950"]:not([class*="/"]) h4,
+#root [class*="bg-slate-950"]:not([class*="/"]) p,
+#root [class*="bg-blue-900"]:not([class*="/"]) h1,
+#root [class*="bg-blue-900"]:not([class*="/"]) h2,
+#root [class*="bg-blue-900"]:not([class*="/"]) h3,
+#root [class*="bg-blue-900"]:not([class*="/"]) h4,
+#root [class*="bg-blue-900"]:not([class*="/"]) p {
   color: #fff !important;
 }
 
-#root [class*="bg-slate-900"] [class*="text-slate-500"],
-#root [class*="bg-slate-950"] [class*="text-slate-500"],
-#root [class*="bg-blue-900"] [class*="text-slate-500"] {
+#root [class*="bg-slate-900"]:not([class*="/"]) [class*="text-slate-500"],
+#root [class*="bg-slate-950"]:not([class*="/"]) [class*="text-slate-500"],
+#root [class*="bg-blue-900"]:not([class*="/"]) [class*="text-slate-500"] {
   color: rgba(255, 255, 255, 0.72) !important;
 }
 
