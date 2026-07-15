@@ -14,12 +14,21 @@ const allowedStatuses = new Set(Object.values(USER_STATUS));
 const cleanText = (value) => String(value || '').trim();
 
 const localSnapshot = async () => {
-  const context = await getCurrentAuthContext();
+  const baseContext = await getCurrentAuthContext();
+  const profile = baseContext.profile ? {
+    ...baseContext.profile,
+    capabilities: {
+      ...baseContext.profile.capabilities,
+      manageUsers: false,
+    },
+  } : null;
+  const context = { ...baseContext, profile };
+
   return {
     mode: 'local',
     context,
-    users: context.profile ? [{
-      ...context.profile,
+    users: profile ? [{
+      ...profile,
       teamMemberName: '',
       invitedByName: '',
     }] : [],
@@ -89,7 +98,7 @@ export const getUserAdministrationSnapshot = async () => {
 
 export const inviteDashboardUser = async (input) => {
   if (AUTH_MODE === 'local') {
-    return { invited: false, reason: 'LOCAL_MODE' };
+    throw new Error('User invitations are unavailable in local provider mode.');
   }
 
   const role = cleanText(input.role) || 'viewer';
@@ -118,7 +127,7 @@ export const inviteDashboardUser = async (input) => {
 };
 
 export const updateDashboardUser = async (userId, patch = {}) => {
-  if (AUTH_MODE === 'local') return { updated: false, reason: 'LOCAL_MODE' };
+  if (AUTH_MODE === 'local') throw new Error('User administration is unavailable in local provider mode.');
 
   const update = {};
   if (patch.displayName !== undefined) update.display_name = cleanText(patch.displayName);
@@ -135,6 +144,15 @@ export const updateDashboardUser = async (userId, patch = {}) => {
     ? patch.regionAccess.map(cleanText).filter(Boolean)
     : [];
   if (patch.disabledReason !== undefined) update.disabled_reason = cleanText(patch.disabledReason);
+
+  const nextStatus = update.status ?? patch.currentStatus;
+  const disabledReason = update.disabled_reason ?? cleanText(patch.currentDisabledReason);
+  if (nextStatus === USER_STATUS.INACTIVE && !disabledReason) {
+    throw new Error('An inactive reason is required when deactivating a dashboard user.');
+  }
+  if (nextStatus !== USER_STATUS.INACTIVE && update.disabled_reason === undefined) {
+    update.disabled_reason = '';
+  }
 
   const { data, error } = await getSupabaseClient()
     .from('user_profiles')
