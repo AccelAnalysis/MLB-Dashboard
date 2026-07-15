@@ -5,6 +5,7 @@ import {
 import { convertLegacyProjectsToProduction } from '../domain/legacyToProduction';
 import { normalizeLegacyProjects } from '../domain/legacyProjectAdapter';
 import { convertProductionToLegacyProjects } from '../domain/productionToLegacy';
+import { getCurrentAuthContext } from './authService';
 import { normalizeBackendError } from './backendErrors';
 import { getProductionRepository } from './productionRepository';
 
@@ -22,6 +23,17 @@ const preserveLegacyCompatibilityFields = (dataset, projects) => {
     thankYouSent: Boolean(projectById.get(jobLegacyId(job))?.thankYouSent),
   }));
   return dataset;
+};
+
+const getWriteAuthorization = async () => {
+  const context = await getCurrentAuthContext();
+  return {
+    context,
+    allowed: Boolean(
+      context?.accessState === 'active'
+      && context?.profile?.capabilities?.legacyFullWrite,
+    ),
+  };
 };
 
 export const isSharedProjectBackendEnabled = () => isSharedBackendEnabled();
@@ -94,6 +106,17 @@ export const saveSharedProjects = async (projects = []) => {
     return { saved: false, reason: 'SHARED_BACKEND_DISABLED' };
   }
 
+  const authorization = await getWriteAuthorization();
+  if (!authorization.allowed) {
+    return {
+      saved: false,
+      reason: authorization.context?.accessState === 'active'
+        ? 'ROLE_REQUIRES_READ_ONLY_LEGACY_MODE'
+        : 'AUTHENTICATION_REQUIRED',
+      role: authorization.context?.profile?.role || null,
+    };
+  }
+
   const repository = getProductionRepository();
   const normalized = normalizeLegacyProjects(projects);
   const conversion = convertLegacyProjectsToProduction(normalized);
@@ -124,7 +147,8 @@ export const saveSharedProjects = async (projects = []) => {
 
 /**
  * Explicitly seeds an empty shared backend from the current legacy project list.
- * The normal loader never performs this write automatically.
+ * The normal loader never performs this write automatically. Authentication and
+ * the legacyFullWrite capability are required.
  */
 export const bootstrapSharedBackend = async (projects = []) => saveSharedProjects(projects);
 
