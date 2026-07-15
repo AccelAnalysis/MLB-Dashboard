@@ -1,6 +1,6 @@
 # MLB Dashboard
 
-React/Vite preview dashboard for Major League Builders production tracking.
+React/Vite dashboard for Major League Builders production, sales, Critical Path, and wallboard tracking.
 
 ## Development
 
@@ -15,6 +15,19 @@ npm run dev
 npm run build
 ```
 
+## Shared backend development
+
+The Phase 4 shared backend uses Supabase/Postgres. Local mode remains the default.
+
+```bash
+npm run supabase:start
+npm run db:reset
+npm run db:lint
+npm run dev
+```
+
+See [Supabase Backend Setup](supabase/README.md) for environment configuration, migrations, seed data, activation, backup, and restore instructions.
+
 ## Production Planning
 
 Production-readiness and implementation planning documents are maintained in `project-docs/`.
@@ -27,6 +40,8 @@ Production-readiness and implementation planning documents are maintained in `pr
 - [Phase 3 Entity Relationships](project-docs/phase-3-entity-relationships.md)
 - [Phase 3 Source-of-Truth Matrix](project-docs/phase-3-source-of-truth-matrix.md)
 - [Phase 3 Implementation Checklist](project-docs/phase-3-implementation-checklist.md)
+- [Phase 4 Shared Backend and Database](project-docs/phase-4-shared-backend.md)
+- [Supabase Backend Operations](supabase/README.md)
 - [Modular Refactor Plan](project-docs/refactor-plan.md)
 - [Help System Specification](project-docs/help-system-spec.md)
 
@@ -36,7 +51,9 @@ Phase 1 stabilizes the existing prototype with isolated readability, navigation,
 
 Phase 2 introduces a clean app entry wrapper, shared utility modules, data constants, reusable layout components, JSDoc model references, and service-layer boundaries. It keeps the stabilized dashboard behavior intact while preparing the large active dashboard file for incremental extraction.
 
-Phase 3 defines the normalized production domain model under `src/domain/`, including entities, relationships, factories, validation, source-of-truth rules, financial calculations, record IDs, legacy migration, and a machine-readable schema. The active prototype remains on its legacy nested records until a shared-backend migration is approved.
+Phase 3 defines the normalized production domain model under `src/domain/`, including entities, relationships, factories, validation, source-of-truth rules, financial calculations, record IDs, legacy migration, and a machine-readable schema.
+
+Phase 4 adds the Supabase/Postgres schema, migrations, RLS, realtime repository, local fallback repository, bidirectional legacy compatibility, shared synchronization, hidden backend administration panel, seed data, backup/restore scripts, and backend CI. Shared mode requires explicit environment configuration and authenticated active users; the dashboard otherwise remains safely in local mode.
 
 ## Production Data Model
 
@@ -46,6 +63,16 @@ The production dataset contract is versioned as `3.0.0` and documented in:
 src/domain/
 schemas/production-dataset.schema.json
 ```
+
+## Backend administration
+
+After Supabase and authentication are configured, open the hidden backend administration panel with:
+
+```txt
+?backendAdmin=1
+```
+
+The panel provides backend health, record counts, data-quality review, explicit empty-backend bootstrap, and validated JSON export.
 
 ## GitHub Pages
 
