@@ -1,0 +1,44 @@
+name: Fix dashboard title
+
+on:
+  push:
+    branches:
+      - fix/dashboard-title
+    paths:
+      - .github/workflows/fix-dashboard-title.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix-dashboard-title:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Correct dashboard title
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/MLBDashboard_field_complete.jsx')
+          content = path.read_text()
+          old = 'Constructions Operations Hub'
+          new = 'Construction Co. Operations Hub'
+
+          if content.count(old) != 1:
+              raise SystemExit(f'Expected exactly one occurrence of {old!r}; found {content.count(old)}')
+
+          path.write_text(content.replace(old, new))
+          PY
+
+      - name: Commit corrected title
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/MLBDashboard_field_complete.jsx
+          git commit -m "Correct dashboard title"
+          git push
