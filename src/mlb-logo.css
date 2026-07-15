@@ -1,0 +1,77 @@
+/*
+ * Major League Builders logo integration.
+ *
+ * The application keeps its existing text labels for accessibility while the
+ * supplied hosted logo replaces the decorative dashboard icons.
+ */
+
+:root {
+  --mlb-logo-image: url("https://mlfvfmpboxe0.i.optimole.com/cb:3G7X.e83/w:498/h:243/q:mauto/f:best/https://gomajorleague.com/wp-content/uploads/2024/06/mlb-removebg-preview.png");
+}
+
+/* Operator application header */
+#root > div > header > div:first-child > div:first-child > div:first-child > svg {
+  display: none;
+}
+
+#root > div > header > div:first-child > div:first-child > div:first-child::before {
+  display: block;
+  width: 8.25rem;
+  height: 3.85rem;
+  flex: 0 0 auto;
+  content: "";
+  background-image: var(--mlb-logo-image);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+
+/* TV Wallboard masthead. A white logo plate keeps the transparent logo clear
+   against the dark wallboard background. */
+#root [data-help-id="wallboard-header"] > div:first-child > div:first-child > svg {
+  display: none;
+}
+
+#root [data-help-id="wallboard-header"] > div:first-child > div:first-child::before {
+  display: block;
+  width: 7.75rem;
+  height: 3.4rem;
+  flex: 0 0 auto;
+  padding: 0.28rem 0.5rem;
+  content: "";
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 0.55rem;
+  background-color: #fff;
+  background-image: var(--mlb-logo-image);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: calc(100% - 1rem) calc(100% - 0.56rem);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+/* Compact full-screen TV presentation */
+#root main > div[class~="fixed"][class~="inset-0"][class~="z-[60]"] [data-help-id="wallboard-header"] > div:first-child > div:first-child::before {
+  width: 6.3rem;
+  height: 2.65rem;
+  padding: 0.2rem 0.4rem;
+  background-size: calc(100% - 0.8rem) calc(100% - 0.4rem);
+  box-shadow: none;
+}
+
+@media (max-width: 900px) {
+  #root > div > header > div:first-child > div:first-child > div:first-child::before {
+    width: 6.5rem;
+    height: 3rem;
+  }
+
+  #root [data-help-id="wallboard-header"] > div:first-child > div:first-child::before {
+    width: 6.25rem;
+    height: 2.8rem;
+  }
+}
+
+@media print {
+  #root > div > header > div:first-child > div:first-child > div:first-child::before {
+    display: none;
+  }
+}
