@@ -1,0 +1,191 @@
+/*
+ * Phase 1 stabilization layer
+ *
+ * Purpose: make the current prototype demo-safe without changing the data model,
+ * replacing local storage, adding duplicate views, or redesigning the app. These
+ * rules sit after the brand/wallboard styles and focus on readability, navigation
+ * clarity, operator/admin separation, and read-only wallboard separation.
+ */
+
+:root {
+  --phase1-focus-ring: 0 0 0 3px rgba(46, 125, 179, 0.22);
+}
+
+/* Keep headings and labels readable after brand styling changes. */
+#root main h1,
+#root main h2,
+#root main h3,
+#root main h4 {
+  text-wrap: balance;
+}
+
+#root main p,
+#root main li,
+#root main td,
+#root main th {
+  overflow-wrap: anywhere;
+}
+
+#root [class*="bg-slate-900"] h1,
+#root [class*="bg-slate-900"] h2,
+#root [class*="bg-slate-900"] h3,
+#root [class*="bg-slate-900"] h4,
+#root [class*="bg-slate-900"] p,
+#root [class*="bg-slate-950"] h1,
+#root [class*="bg-slate-950"] h2,
+#root [class*="bg-slate-950"] h3,
+#root [class*="bg-slate-950"] h4,
+#root [class*="bg-slate-950"] p,
+#root [class*="bg-blue-900"] h1,
+#root [class*="bg-blue-900"] h2,
+#root [class*="bg-blue-900"] h3,
+#root [class*="bg-blue-900"] h4,
+#root [class*="bg-blue-900"] p {
+  color: #fff !important;
+}
+
+#root [class*="bg-slate-900"] [class*="text-slate-500"],
+#root [class*="bg-slate-950"] [class*="text-slate-500"],
+#root [class*="bg-blue-900"] [class*="text-slate-500"] {
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+
+/* Navigation: keep the operator workspace clear and visually separate TV mode. */
+#root nav[data-help-id="global-main-nav"] {
+  align-items: center;
+  scrollbar-width: thin;
+}
+
+#root nav[data-help-id="global-main-nav"] button {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: max-content;
+  line-height: 1.15;
+}
+
+#root nav[data-help-id="global-main-nav"] button:focus-visible,
+#root header [aria-label="Production views"] button:focus-visible,
+#root header [aria-label="Bottleneck filters"] button:focus-visible,
+#root button:focus-visible,
+#root [role="button"]:focus-visible {
+  outline: none !important;
+  box-shadow: var(--phase1-focus-ring) !important;
+}
+
+#root nav[data-help-id="global-main-nav"] button:last-of-type {
+  margin-left: auto;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+#root nav[data-help-id="global-main-nav"] button:last-of-type::after {
+  display: inline-flex;
+  margin-left: 0.55rem;
+  padding: 0.12rem 0.38rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.74);
+  content: "read-only";
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+#root nav[data-help-id="global-main-nav"] button:last-of-type.bg-slate-900,
+#root nav[data-help-id="global-main-nav"] button:last-of-type:hover {
+  border-color: rgba(255, 255, 255, 0.36);
+  background: linear-gradient(90deg, rgba(195, 58, 69, 0.4), rgba(255, 255, 255, 0.1)) !important;
+}
+
+#root header [aria-label="Production views"],
+#root header [aria-label="Bottleneck filters"] {
+  align-items: center;
+}
+
+#root header [aria-label="Production views"] button,
+#root header [aria-label="Bottleneck filters"] button {
+  min-height: 2rem;
+}
+
+/* Operator surfaces: make tables and dense dashboards easier to read. */
+#root table {
+  color: #1e293b;
+}
+
+#root table th {
+  color: #334155 !important;
+  background: #f8fafc !important;
+}
+
+#root table td {
+  color: #1f2937;
+}
+
+#root table tbody tr:hover td {
+  color: #111827;
+}
+
+#root [data-help-id="customer-view-summary"] > div,
+#root [data-help-id="sales-summary-metrics"] > div,
+#root [data-help-id="customer-project-card"],
+#root [data-help-id="salesperson-performance-table"] {
+  isolation: isolate;
+}
+
+#root [data-help-id="customer-view-summary"] > div p:last-child,
+#root [data-help-id="sales-summary-metrics"] > div p:last-child {
+  color: #475569 !important;
+}
+
+#root [data-help-id="customer-project-card"] [class*="text-slate-400"] {
+  color: #64748b !important;
+}
+
+#root [data-help-id="customer-project-card"] [class*="text-slate-500"] {
+  color: #475569 !important;
+}
+
+/* Admin/configuration controls stay in the header and remain visually distinct. */
+#root [data-help-id="global-admin-menu"] {
+  min-width: 2.6rem;
+}
+
+#root [data-help-id="global-admin-menu"][aria-expanded="true"],
+#root [data-help-id="global-admin-menu"]:focus-visible {
+  border-color: var(--mlb-blue-500) !important;
+  background: #eef7fc !important;
+}
+
+/* Wallboard safety: keep normal wallboard readable, but keep its detailed panels separated from operator summaries. */
+#root [data-help-id="wallboard-header"],
+#root [data-help-id="wallboard-status-columns"] {
+  isolation: isolate;
+}
+
+#root [data-help-id="wallboard-header"] p,
+#root [data-help-id="wallboard-status-columns"] p {
+  overflow-wrap: normal;
+}
+
+#root [data-help-id="wallboard-bottleneck-spotlight"],
+#root [data-help-id="wallboard-sales-snapshot"],
+#root [data-help-id="wallboard-critical-path-spotlight"] {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+@media (max-width: 767px) {
+  #root nav[data-help-id="global-main-nav"] button:last-of-type {
+    margin-left: 0;
+  }
+
+  #root nav[data-help-id="global-main-nav"] button:last-of-type::after {
+    display: none;
+  }
+
+  #root table th,
+  #root table td {
+    white-space: nowrap;
+  }
+}
