@@ -4,9 +4,11 @@ import { CAPABILITY } from '../auth/permissions';
 import BackendAdminPanel from '../components/admin/BackendAdminPanel.jsx';
 import UserAdminPanel from '../components/admin/UserAdminPanel.jsx';
 import AccountControl from '../components/auth/AccountControl.jsx';
-import ManualEntryPanel from '../components/production/ManualEntryPanel.jsx';
 import LegacyMLBDashboard from '../MLBDashboard_field_complete.jsx';
-import { canUseManualEntry } from '../services/manualEntryService';
+import {
+  initializeLegacyWorkflowProduction,
+  syncLegacyProjectsToProduction,
+} from '../services/legacyWorkflowSyncService';
 import { loadProjects, saveProjects } from '../services/projectStorage';
 import {
   getSharedSyncDebounceMs,
@@ -47,12 +49,12 @@ function ReadOnlyNotice({ profile }) {
 }
 
 /**
- * Phase 6 production entry point.
+ * Production application entry point.
  *
- * The stabilized legacy dashboard remains the operator, Book, meeting, and
- * Wallboard renderer. The Phase 6 manual-entry workspace writes normalized
- * customer/job/scope records and refreshes the compatibility cache so all
- * existing views reflect the same authoritative records.
+ * The stabilized New Project -> Open File -> Edit Project workflow remains the
+ * only operator entry surface. Successful project-file saves are reconciled into
+ * the normalized Phase 6 customer/job/scope backend, including validation,
+ * revision metadata, activity history, status history, and archive/void behavior.
  */
 export default function MLBDashboard() {
   const auth = useAuth();
@@ -60,7 +62,6 @@ export default function MLBDashboard() {
   const capabilities = profile?.capabilities || {};
   const canManageUsers = Boolean(capabilities[CAPABILITY.MANAGE_USERS]);
   const canManageBackend = Boolean(capabilities[CAPABILITY.MANAGE_BACKEND]);
-  const canOpenManualEntry = canUseManualEntry(capabilities);
   const canWriteSharedData = Boolean(
     capabilities[CAPABILITY.MANAGE_SALES_DATA]
     || capabilities[CAPABILITY.MANAGE_PRODUCTION_DATA]
@@ -75,18 +76,20 @@ export default function MLBDashboard() {
   const [userAdminOpen, setUserAdminOpen] = useState(
     () => canManageUsers && new URLSearchParams(window.location.search).get('userAdmin') === '1',
   );
-  const [manualEntryOpen, setManualEntryOpen] = useState(
-    () => canOpenManualEntry && new URLSearchParams(window.location.search).get('manualEntry') === '1',
-  );
   const disposedRef = useRef(false);
   const sharedReadyRef = useRef(false);
   const lastLocalSnapshotRef = useRef('');
   const saveTimerRef = useRef(null);
   const refreshTimerRef = useRef(null);
+  const productionSyncQueueRef = useRef(Promise.resolve());
 
   useEffect(() => {
     if (capabilities[CAPABILITY.WALLBOARD_ONLY]) prepareWallboardOnlyUrl();
   }, [capabilities]);
+
+  useEffect(() => {
+    removeQueryFlag('manualEntry');
+  }, []);
 
   useEffect(() => {
     const handleBackendAdmin = () => {
@@ -95,9 +98,6 @@ export default function MLBDashboard() {
     const handleUserAdmin = () => {
       if (canManageUsers) setUserAdminOpen(true);
     };
-    const handleManualEntry = () => {
-      if (canOpenManualEntry) setManualEntryOpen(true);
-    };
     const handleAuthorizationDenied = (event) => {
       setAuthorizationMessage(event.detail?.message || 'Your role cannot save that change.');
       setInstanceKey((current) => current + 1);
@@ -105,15 +105,65 @@ export default function MLBDashboard() {
 
     window.addEventListener('mlb-open-backend-admin', handleBackendAdmin);
     window.addEventListener('mlb-open-user-admin', handleUserAdmin);
-    window.addEventListener('mlb-open-manual-entry', handleManualEntry);
     window.addEventListener('mlb-authorization-denied', handleAuthorizationDenied);
     return () => {
       window.removeEventListener('mlb-open-backend-admin', handleBackendAdmin);
       window.removeEventListener('mlb-open-user-admin', handleUserAdmin);
-      window.removeEventListener('mlb-open-manual-entry', handleManualEntry);
       window.removeEventListener('mlb-authorization-denied', handleAuthorizationDenied);
     };
-  }, [canManageBackend, canManageUsers, canOpenManualEntry]);
+  }, [canManageBackend, canManageUsers]);
+
+  useEffect(() => {
+    if (!profile) return undefined;
+    let active = true;
+
+    initializeLegacyWorkflowProduction({ projects: loadProjects(), profile })
+      .then(() => {
+        if (!active) return;
+        lastLocalSnapshotRef.current = serializeProjects(loadProjects());
+        setInstanceKey((current) => current + 1);
+      })
+      .catch((error) => {
+        if (active) setAuthorizationMessage(error.message || 'Unable to initialize normalized production records.');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [profile?.id]);
+
+  useEffect(() => {
+    if (!profile) return undefined;
+
+    const handleLegacyProjectSave = (event) => {
+      const detail = event.detail || {};
+      const projects = detail.projects || loadProjects();
+      const previousProjects = detail.previousProjects || [];
+
+      productionSyncQueueRef.current = productionSyncQueueRef.current
+        .catch(() => {})
+        .then(() => syncLegacyProjectsToProduction({
+          projects,
+          previousProjects,
+          profile,
+          capabilities,
+        }))
+        .then((result) => {
+          lastLocalSnapshotRef.current = serializeProjects(loadProjects());
+          if (result?.saved || result?.reason === 'NO_NORMALIZED_CHANGES') {
+            setInstanceKey((current) => current + 1);
+          }
+        })
+        .catch((error) => {
+          lastLocalSnapshotRef.current = serializeProjects(loadProjects());
+          setAuthorizationMessage(error.message || 'The normalized production backend rejected the project-file change.');
+          setInstanceKey((current) => current + 1);
+        });
+    };
+
+    window.addEventListener('mlb-legacy-projects-saved', handleLegacyProjectSave);
+    return () => window.removeEventListener('mlb-legacy-projects-saved', handleLegacyProjectSave);
+  }, [profile, capabilities]);
 
   useEffect(() => {
     disposedRef.current = false;
@@ -213,11 +263,6 @@ export default function MLBDashboard() {
     };
   }, [canWriteSharedData, profile?.id]);
 
-  const handleManualEntrySaved = () => {
-    lastLocalSnapshotRef.current = serializeProjects(loadProjects());
-    setInstanceKey((current) => current + 1);
-  };
-
   return (
     <>
       {authorizationMessage && (
@@ -232,19 +277,8 @@ export default function MLBDashboard() {
       <LegacyMLBDashboard key={instanceKey} />
       <ReadOnlyNotice profile={profile} />
       <AccountControl
-        onOpenManualEntry={() => canOpenManualEntry && setManualEntryOpen(true)}
         onOpenUsers={() => canManageUsers && setUserAdminOpen(true)}
         onOpenBackend={() => canManageBackend && setBackendAdminOpen(true)}
-      />
-      <ManualEntryPanel
-        open={manualEntryOpen && canOpenManualEntry}
-        onClose={() => {
-          setManualEntryOpen(false);
-          removeQueryFlag('manualEntry');
-        }}
-        profile={profile}
-        capabilities={capabilities}
-        onSaved={handleManualEntrySaved}
       />
       <BackendAdminPanel
         open={backendAdminOpen && canManageBackend}
