@@ -133,6 +133,8 @@ export const convertLegacyProjectsToProduction = (inputProjects = []) => {
     const allScopesCompleted = project.scopes.length > 0 && project.scopes.every((scope) => scope.completionDate);
     const completionDates = project.scopes.map((scope) => scope.completionDate).filter(Boolean).sort();
     const completedAt = completionDates.at(-1) || '';
+    const amountPaid = Math.max(0, Number(project.amountCollected ?? (project.collected ? finalAmount : project.deposit || 0)));
+    const collectionDate = project.collectedDate || '';
 
     dataset.jobs.push(createJob({
       ...metadata(jobId),
@@ -159,11 +161,11 @@ export const convertLegacyProjectsToProduction = (inputProjects = []) => {
       originalContractAmount: project.originalAmount,
       finalAmount,
       depositAmount: project.deposit,
-      amountPaid: project.collected ? finalAmount : Number(project.deposit || 0),
-      balanceDue: project.collected ? 0 : Math.max(0, finalAmount - Number(project.deposit || 0)),
-      fundedAt: project.collected ? completedAt : '',
-      collectedAt: project.collected ? completedAt : '',
-      closedAt: project.collected && allScopesCompleted ? completedAt : '',
+      amountPaid,
+      balanceDue: Math.max(0, finalAmount - amountPaid),
+      fundedAt: project.collected ? collectionDate : '',
+      collectedAt: project.collected ? collectionDate : '',
+      closedAt: project.collected && allScopesCompleted ? (collectionDate || completedAt) : '',
       cancelledAt: project.cancellationDate,
       cancellationReason: project.cancellationReason,
       decisionNeeded: project.decisionNeeded,
@@ -202,6 +204,7 @@ export const convertLegacyProjectsToProduction = (inputProjects = []) => {
             : RECORD_STATUS.ACTIVE,
         jobId,
         category: scope.type,
+        allocatedAmount: scope.allocatedAmount,
         productionStage: inferScopeStage(scope, project),
         measurerName: scope.measurer,
         crewId,

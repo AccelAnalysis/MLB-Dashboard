@@ -178,6 +178,7 @@
           "properties": {
             "jobId": { "type": "string", "minLength": 1 },
             "category": { "type": "string", "minLength": 1 },
+            "allocatedAmount": { "type": ["number", "null"], "minimum": 0 },
             "description": { "type": "string" },
             "productionStage": { "$ref": "#/$defs/productionStage" },
             "priority": { "type": "string" },

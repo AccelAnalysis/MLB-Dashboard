@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "backend:check": "node scripts/verify-backend-config.mjs",
-    "phase6:verify": "node --experimental-loader ./scripts/extensionless-esm-loader.mjs scripts/verify-phase6-manual-entry.mjs && node --experimental-loader ./scripts/extensionless-esm-loader.mjs scripts/verify-project-file-workflow.mjs",
+    "phase6:verify": "node --experimental-loader ./scripts/extensionless-esm-loader.mjs scripts/verify-phase6-manual-entry.mjs && node --experimental-loader ./scripts/extensionless-esm-loader.mjs scripts/verify-project-file-workflow.mjs && node --experimental-loader ./scripts/extensionless-esm-loader.mjs scripts/verify-metric-integrity.mjs",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
     "supabase:status": "supabase status",

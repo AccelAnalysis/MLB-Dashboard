@@ -44,6 +44,7 @@ const toLegacyChangeOrder = (record, index) => ({
 const toLegacyScope = (record) => ({
   id: legacyRecordId(record, 'SCP', ['legacyScopeId']),
   type: record.category || '',
+  allocatedAmount: record.allocatedAmount === undefined || record.allocatedAmount === null ? '' : Number(record.allocatedAmount),
   measurer: record.measurerName || '',
   measureRequested: record.dates?.measureRequested || '',
   measureCompleted: record.dates?.measured || '',
@@ -115,6 +116,8 @@ export const convertProductionToLegacyProjects = (dataset = {}) => {
       paymentType: job.paymentType || '',
       originalAmount: Number(job.originalContractAmount || 0),
       deposit: Number(job.depositAmount || 0),
+      amountCollected: Number(job.amountPaid || 0),
+      collectedDate: job.collectedAt || job.fundedAt ? String(job.collectedAt || job.fundedAt).slice(0, 10) : '',
       collected,
       thankYouSent: Boolean(job.thankYouSent),
       cancelled: Boolean(job.cancelledAt || job.productionStage === PRODUCTION_STAGE.CANCELLED),
