@@ -20,10 +20,13 @@ npm run build
 Production-readiness and implementation planning documents are maintained in `project-docs/`.
 
 - [Phase 0 Production Readiness Assessment](project-docs/phase-0-production-readiness-assessment.md)
+- [Phase 1 Stabilization Implementation](project-docs/phase-1-stabilization.md)
 - [Modular Refactor Plan](project-docs/refactor-plan.md)
 - [Help System Specification](project-docs/help-system-spec.md)
 
-Phase 0 is documentation and assessment only. It establishes the production baseline, gap checklist, behavior-preservation risks, and next implementation handoff before backend, authentication, role-based permissions, JobNimbus integration, or major UI changes are attempted.
+Phase 0 establishes the production baseline, gap checklist, behavior-preservation risks, and next implementation handoff before backend, authentication, role-based permissions, JobNimbus integration, or major UI changes are attempted.
+
+Phase 1 stabilizes the existing prototype with isolated readability, navigation, and wallboard-separation styling in `src/phase-1-stabilization.css`. It intentionally avoids changing the data model, local storage, calculations, external integrations, or the active dashboard component structure.
 
 ## GitHub Pages
 
