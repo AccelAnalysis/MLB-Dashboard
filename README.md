@@ -9,20 +9,28 @@ npm install
 npm run dev
 ```
 
+Local mode is the default and uses a development owner identity without requiring credentials.
+
 ## Build
 
 ```bash
 npm run build
 ```
 
-## Shared backend development
+## Shared backend and authentication development
 
-The shared backend uses Supabase/Postgres. Local mode remains the default until Supabase data and authentication are both explicitly enabled.
+The production foundation uses Supabase/Postgres with invitation-only Supabase Auth.
 
 ```bash
 npm run supabase:start
 npm run db:reset
 npm run db:lint
+
+LOCAL_OWNER_EMAIL='owner@example.com' \
+LOCAL_OWNER_PASSWORD='local-test-password-at-least-12-characters' \
+LOCAL_OWNER_NAME='Local MLB Owner' \
+npm run auth:bootstrap-local
+
 npm run dev
 ```
 
@@ -30,27 +38,7 @@ See:
 
 - [Supabase Backend Setup](supabase/README.md)
 - [Authentication Operations](supabase/AUTHENTICATION.md)
-
-## Local Phase 5 authentication test
-
-After the local stack is running and migrations have been reset, create the local owner without copying a service-role key into a file:
-
-```bash
-LOCAL_OWNER_EMAIL='owner@example.com' \
-LOCAL_OWNER_PASSWORD='local-password-at-least-12-characters' \
-LOCAL_OWNER_NAME='Local MLB Owner' \
-npm run auth:bootstrap-local
-```
-
-Configure `.env.local` with the local API URL and publishable/anon key shown by `supabase status`, then set:
-
-```txt
-VITE_DATA_PROVIDER=supabase
-VITE_AUTH_MODE=supabase
-VITE_AUTH_REDIRECT_URL=http://127.0.0.1:5173
-```
-
-Never place the service-role key in a `VITE_` variable.
+- [First Owner Bootstrap](supabase/FIRST_OWNER.md)
 
 ## Production Planning
 
@@ -66,24 +54,36 @@ Production-readiness and implementation documents are maintained in `project-doc
 - [Phase 3 Implementation Checklist](project-docs/phase-3-implementation-checklist.md)
 - [Phase 4 Shared Backend and Database](project-docs/phase-4-shared-backend.md)
 - [Phase 4 Completion Status](project-docs/phase-4-completion-status.md)
-- [Phase 5 Authentication, Users, and Roles](project-docs/phase-5-authentication-roles.md)
-- [Phase 5 Role and Permission Matrix](project-docs/phase-5-role-permission-matrix.md)
-- [Supabase Backend Operations](supabase/README.md)
-- [Supabase Authentication Operations](supabase/AUTHENTICATION.md)
+- [Phase 5 Authentication, Users, and Roles](project-docs/phase-5-authentication-and-roles.md)
+- [Phase 5 Role Matrix](project-docs/phase-5-role-matrix.md)
 - [Modular Refactor Plan](project-docs/refactor-plan.md)
 - [Help System Specification](project-docs/help-system-spec.md)
 
-Phase 0 establishes the production baseline, gap checklist, behavior-preservation risks, and next implementation handoff.
+## Implemented production phases
 
-Phase 1 stabilizes readability, navigation, and Wallboard separation without changing the data model or active component structure.
+### Phase 0
 
-Phase 2 introduces the app wrapper, shared utilities, constants, reusable components, model references, and service boundaries.
+Established the production-readiness baseline, gap checklist, behavior-preservation risks, and implementation handoff.
 
-Phase 3 defines the normalized production domain model, relationships, factories, validation, source ownership, financial calculations, IDs, legacy migration, and machine-readable schema.
+### Phase 1
 
-Phase 4 adds the Supabase/Postgres schema, migrations, RLS, realtime repository, local fallback, compatibility bridge, guarded shared synchronization, backend administration, seed data, backup/restore, and backend CI.
+Stabilized readability, navigation, and Wallboard separation without changing persistence or calculations.
 
-Phase 5 adds invite-only authentication, login/logout, password recovery, active-profile enforcement, role and region permissions, salesperson assignment scope, owner safeguards, user administration, secure Edge Function invitations, Wallboard accounts, and local owner bootstrap. Because the legacy dashboard saves a complete nested dataset, full legacy write-back remains limited to Owner, Business Admin, and Operations Admin until granular role-specific editors are implemented.
+### Phase 2
+
+Added a clean app wrapper, utilities, constants, reusable components, and service boundaries around the large legacy component.
+
+### Phase 3
+
+Defined the normalized production model, entity relationships, validation, source ownership, financial calculations, record IDs, and legacy migration bridge.
+
+### Phase 4
+
+Added the Supabase/Postgres schema, migrations, RLS, realtime repository, local fallback, bidirectional legacy conversion, guarded synchronization, backend administration, seed data, backup/restore procedures, and backend CI.
+
+### Phase 5
+
+Added invitation-only authentication, sign-in/sign-out, password recovery, invitation activation, user lifecycle management, role administration, owner safeguards, browser authorization, role-scoped shared saves, account controls, and Wallboard-only access.
 
 ## Production Data Model
 
@@ -94,33 +94,35 @@ src/domain/
 schemas/production-dataset.schema.json
 ```
 
-## Authenticated administration
+## Administration
 
-In Supabase mode, authorized accounts use the account control in the lower-right corner to open:
+Authenticated users access account controls from the lower-right account button.
 
-- Users, roles, and access.
-- Backend administration.
-- Password recovery.
-- Profile controls.
-- Sign-out.
+Authorized roles may open:
 
-The backend panel can also be opened directly by an authorized role with:
+- **Users, Roles, and Access**
+- **Backend Administration**
+
+The backend panel is also addressable through:
 
 ```txt
 ?backendAdmin=1
 ```
 
-The user administration panel can be opened directly by an authorized role with:
+The user panel is addressable through:
 
 ```txt
 ?userAdmin=1
 ```
 
+Query parameters do not bypass role checks.
+
 ## GitHub Pages
 
-This repository supports two GitHub Pages publishing options:
+Preferred deployment:
 
-- Preferred: `Settings` → `Pages` → `Source: GitHub Actions`
-- Branch fallback: `Settings` → `Pages` → `Deploy from a branch`, then choose `main` and `/docs`
+```txt
+Settings -> Pages -> Source: GitHub Actions
+```
 
-The `/docs` folder contains the compiled Vite build for branch-based Pages publishing.
+The deployment workflow accepts the browser-safe Supabase and authentication variables documented in `.env.example` and `supabase/AUTHENTICATION.md`.
