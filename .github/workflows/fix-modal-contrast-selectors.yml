@@ -1,0 +1,50 @@
+name: Fix modal contrast selectors
+
+on:
+  push:
+    branches:
+      - fix/modal-text-contrast
+    paths:
+      - .github/workflows/fix-modal-contrast-selectors.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix-selectors:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Exclude translucent backdrops from dark-surface rules
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/phase-1-stabilization.css')
+          content = path.read_text()
+          replacements = {
+              '[class*="bg-slate-900"]': '[class*="bg-slate-900"]:not([class*="/"])',
+              '[class*="bg-slate-950"]': '[class*="bg-slate-950"]:not([class*="/"])',
+              '[class*="bg-blue-900"]': '[class*="bg-blue-900"]:not([class*="/"])',
+          }
+
+          for old, new in replacements.items():
+              count = content.count(old)
+              if count == 0:
+                  raise SystemExit(f'Expected at least one occurrence of {old!r}')
+              content = content.replace(old, new)
+
+          path.write_text(content)
+          PY
+
+      - name: Commit selector correction
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/phase-1-stabilization.css
+          git commit -m "Exclude modal backdrops from dark text rules"
+          git push
