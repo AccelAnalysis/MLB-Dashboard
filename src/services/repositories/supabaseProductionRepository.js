@@ -1,5 +1,6 @@
 import { ENABLE_REALTIME } from '../../config/backendConfig';
 import { createEmptyProductionDataset } from '../../domain/productionDataset';
+import { normalizeOperationalRecordStatuses } from '../../domain/recordLifecycle';
 import { validateProductionDataset } from '../../domain/validation';
 import { BackendError, normalizeBackendError } from '../backendErrors';
 import { getSupabaseClient } from '../supabaseClient';
@@ -89,7 +90,8 @@ export class SupabaseProductionRepository {
       dataset[collection] = records;
     });
 
-    const validation = validateProductionDataset(dataset);
+    const normalized = normalizeOperationalRecordStatuses(dataset);
+    const validation = validateProductionDataset(normalized);
     if (!validation.valid) {
       throw new BackendError('The shared database returned an invalid production dataset.', {
         code: 'INVALID_SHARED_DATASET',
@@ -100,7 +102,7 @@ export class SupabaseProductionRepository {
       });
     }
 
-    return { dataset, validation };
+    return { dataset: normalized, validation };
   }
 
   async getChangedRecords(collection, definition, records, precise) {
@@ -125,7 +127,8 @@ export class SupabaseProductionRepository {
   }
 
   async saveDataset(dataset, options = {}) {
-    const validation = validateProductionDataset(dataset);
+    const normalized = normalizeOperationalRecordStatuses(dataset);
+    const validation = validateProductionDataset(normalized);
     if (!validation.valid) {
       throw new BackendError('Refusing to save an invalid production dataset.', {
         code: 'INVALID_DATASET',
@@ -146,7 +149,7 @@ export class SupabaseProductionRepository {
     const submittedCounts = {};
 
     for (const collection of saveOrder) {
-      const allRecords = Array.isArray(dataset[collection]) ? dataset[collection] : [];
+      const allRecords = Array.isArray(normalized[collection]) ? normalized[collection] : [];
       counts[collection] = allRecords.length;
       if (!allRecords.length) {
         submittedCounts[collection] = 0;
