@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import MLBDashboard from './MLBDashboard_field_complete.jsx';
+import MLBDashboard from './app/MLBDashboard.jsx';
 import './index.css';
 import './mlb-brand.css';
 import './wallboard-display.css';
