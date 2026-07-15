@@ -1,0 +1,7 @@
+export default function Badge({ children, className = '' }) {
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide sm:text-xs ${className}`}>
+      {children}
+    </span>
+  );
+}
