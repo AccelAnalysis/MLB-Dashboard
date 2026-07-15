@@ -47,19 +47,19 @@ jobs:
               raise SystemExit(f'Expected one sales activity id template, found {source.count(old)}')
           source = source.replace(old, new)
           marker = '// Active dashboard UI and calculations.'
-          if source.count(marker) != 1:
+          marker_index = source.find(marker)
+          if marker_index == -1 or source.find(marker, marker_index + 1) != -1:
               raise SystemExit('Dashboard generation marker is missing or duplicated')
           before, after = source.split(marker, 1)
           after = after.replace('${', r'\${')
           source = before + marker + after
-          csv_header = "'Completion Date',"
-          header_index = source.find(csv_header, source.find(marker))
+          verification_index = source.find('// Verification hooks.', marker_index)
+          header_index = source.rfind("'Completion Date',", marker_index, verification_index)
           if header_index != -1:
-              block_start = source.rfind('replaceOnce(', 0, header_index)
-              verification_index = source.find('// Verification hooks.', header_index)
-              if block_start == -1 or verification_index == -1:
+              block_start = source.rfind('replaceOnce(', marker_index, header_index)
+              comment_start = source.rfind('// ---------------------------------------------------------------------------', marker_index, verification_index)
+              if block_start == -1 or comment_start == -1:
                   raise SystemExit('Unable to isolate optional CSV patch block')
-              comment_start = source.rfind('// ---------------------------------------------------------------------------', 0, verification_index)
               source = source[:block_start] + source[comment_start:]
           path.write_text(source)
           PY
