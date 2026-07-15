@@ -150,7 +150,7 @@ export const updateDashboardUser = async (userId, patch = {}) => {
   if (nextStatus === USER_STATUS.INACTIVE && !disabledReason) {
     throw new Error('An inactive reason is required when deactivating a dashboard user.');
   }
-  if (nextStatus !== USER_STATUS.INACTIVE && update.disabled_reason === undefined) {
+  if (nextStatus !== USER_STATUS.INACTIVE) {
     update.disabled_reason = '';
   }
 
