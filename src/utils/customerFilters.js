@@ -1,5 +1,5 @@
 import { todayISO, daysBetween } from './dateUtils';
-import { getProjectAlerts, getRevisedAmount, isProjectClosed } from './projectStatus';
+import { getProjectAlerts, getRevisedAmount } from './projectStatus';
 import { getProjectCompletionDate } from './projectMetrics';
 
 export const CUSTOMER_SORT_OPTIONS = [
@@ -9,7 +9,7 @@ export const CUSTOMER_SORT_OPTIONS = [
   ['sold-asc', 'Oldest sold'],
   ['amount-desc', 'Highest revised amount'],
   ['amount-asc', 'Lowest revised amount'],
-  ['active-desc', 'Most days active'],
+  ['active-desc', 'Longest since sold'],
   ['alerts-desc', 'Most urgent / most alerts'],
   ['balance-desc', 'Largest open balance'],
   ['install-asc', 'Nearest scheduled installation'],
@@ -35,10 +35,10 @@ export const matchesCustomerFilters = (project, filters = EMPTY_CUSTOMER_FILTERS
   const alerts = getProjectAlerts(project);
   const completed = Boolean(getProjectCompletionDate(project));
   const statusMatches = !filters.status
-    || (filters.status === 'active' && !project.cancelled && !isProjectClosed(project))
-    || (filters.status === 'completed' && !project.cancelled && completed)
+    || (filters.status === 'active-production' && !project.cancelled && !completed)
+    || (filters.status === 'production-completed' && !project.cancelled && completed)
     || (filters.status === 'cancelled' && project.cancelled)
-    || (filters.status === 'awaiting-collection' && !project.cancelled && completed && !project.collected);
+    || (filters.status === 'awaiting-collection' && !project.cancelled && completed && !(project.collected || project.funded));
   return (!filters.region || project.region === filters.region)
     && statusMatches
     && (!filters.alerts || (filters.alerts === 'has' ? alerts.length > 0 : alerts.length === 0))

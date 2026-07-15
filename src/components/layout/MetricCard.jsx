@@ -1,5 +1,5 @@
 import { ArrowDownRight, ArrowUpRight, BarChart3 } from 'lucide-react';
-import { formatMetricValue } from '../../metrics/metricFormatting';
+import { formatMetricValue, getComparisonPresentation } from '../../metrics/metricFormatting';
 
 const exactNumber = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 const exactCurrency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
@@ -33,6 +33,7 @@ export default function MetricCard({
   const resolvedUnavailable = unavailable || value === null || value === undefined;
   const shownValue = loading ? 'Loading…' : resolvedUnavailable ? '—' : (displayValue ?? formatMetricValue(value, format));
   const exactValue = exactMetricValue(value, format);
+  const comparison = getComparisonPresentation(metric || { comparisonChange, format });
   const toneClasses = {
     default: 'border-slate-200 bg-white',
     warning: 'border-amber-200 bg-amber-50',
@@ -56,10 +57,10 @@ export default function MetricCard({
         </span>
         {!interactive && helpIcon}
       </div>
-      {comparisonChange !== null && comparisonChange !== undefined && (
-        <p className={`mt-2 flex items-center text-xs font-bold ${comparisonChange < 0 ? 'text-red-700' : 'text-green-700'}`}>
-          {comparisonChange < 0 ? <ArrowDownRight size={14} /> : <ArrowUpRight size={14} />}
-          {Math.abs(comparisonChange * 100).toFixed(1)}% vs comparison
+      {comparison && (
+        <p className={`mt-2 flex items-center text-xs font-bold ${comparison.sentiment === 'favorable' ? 'text-green-700' : comparison.sentiment === 'unfavorable' ? 'text-red-700' : 'text-slate-600'}`}>
+          {comparison.direction === 'down' ? <ArrowDownRight size={14} /> : <ArrowUpRight size={14} />}
+          {comparison.changeText} vs {comparison.label}
         </p>
       )}
       {(detail || resolvedUnavailable) && <p className="mt-1 text-sm text-slate-500">{resolvedUnavailable ? 'Unavailable for the selected filters' : detail}</p>}

@@ -72,11 +72,12 @@ export default function CustomerWorkspace({
         {filtersOpen && (
           <div className="mt-4 grid grid-cols-1 gap-3 border-t border-slate-200 pt-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <SelectFilter label="Region" value={filters.region} onChange={(value) => updateFilter('region', value)}>{options.region.map((value) => <option key={value}>{value}</option>)}</SelectFilter>
-            <SelectFilter label="Project status" value={filters.status} onChange={(value) => updateFilter('status', value)}><option value="active">Active</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option><option value="awaiting-collection">Awaiting collection</option></SelectFilter>
+            <SelectFilter label="Project status" value={filters.status} onChange={(value) => updateFilter('status', value)}><option value="active-production">Active Production</option><option value="production-completed">Production Completed</option><option value="awaiting-collection">Awaiting Collection</option><option value="cancelled">Cancelled</option></SelectFilter>
             <SelectFilter label="Alerts" value={filters.alerts} onChange={(value) => updateFilter('alerts', value)}><option value="has">Has alerts</option><option value="none">No alerts</option></SelectFilter>
             {['productCategory', 'salesperson', 'leadSource', 'paymentType', 'crew', 'measurer'].map((key) => <SelectFilter key={key} label={FILTER_LABELS[key]} value={filters[key]} onChange={(value) => updateFilter(key, value)}>{options[key].map((value) => <option key={value}>{value}</option>)}</SelectFilter>)}
           </div>
         )}
+        {filtersOpen && <p className="mt-2 text-xs text-slate-500">Awaiting Collection is the subset of Production Completed projects that is not yet marked collected or funded.</p>}
         <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-600">
           <span className="font-semibold">Showing {results.length} of {projects.length} projects</span>
           {search && <button type="button" onClick={() => setSearch('')} className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">Search: {search} <X size={12} className="ml-1 inline" /></button>}

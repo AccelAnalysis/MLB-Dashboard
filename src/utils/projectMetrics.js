@@ -17,11 +17,52 @@ const matchesCategory = (project, category = ALL_CATEGORIES) => (
   || (project.scopes || []).some((scope) => scope.type === category)
 );
 const matchesRegion = (project, region = ALL_CATEGORIES) => !region || region === ALL_CATEGORIES || project.region === region;
+const matchesDimension = (value, expected = ALL_CATEGORIES) => !expected || expected === ALL_CATEGORIES || value === expected;
+
+const matchesProjectDimensions = (project, options = {}) => (
+  matchesRegion(project, options.region)
+  && matchesDimension(project.salesperson, options.salesperson)
+  && matchesDimension(project.leadSource, options.leadSource)
+  && matchesDimension(project.paymentType, options.paymentType)
+);
 
 export const getProjectCompletionDate = (project) => {
   const scopes = Array.isArray(project?.scopes) ? project.scopes : [];
   if (!scopes.length || !scopes.every((scope) => scope.completionDate)) return '';
   return scopes.map((scope) => scope.completionDate).sort().at(-1) || '';
+};
+
+export const getProjectCategoryAllocations = (project) => {
+  const revisedAmount = getRevisedAmount(project);
+  const scopes = Array.isArray(project?.scopes) ? project.scopes : [];
+  if (!scopes.length) return { included: false, allocations: [], reason: 'NO_SCOPES', revisedAmount };
+
+  if (scopes.length === 1) {
+    return { included: true, allocations: [{ category: scopes[0].type || 'Unassigned', amount: revisedAmount }], reason: null, revisedAmount };
+  }
+
+  const allocationsComplete = scopes.every(hasExplicitAllocation);
+  const allocatedTotal = scopes.reduce((sum, scope) => sum + asNumber(scope.allocatedAmount), 0);
+  const allocationsBalance = Math.abs(allocatedTotal - revisedAmount) <= 1;
+  if (!allocationsComplete || !allocationsBalance) {
+    return {
+      included: false,
+      allocations: [],
+      reason: allocationsComplete ? 'ALLOCATION_TOTAL_MISMATCH' : 'ALLOCATION_REQUIRED',
+      allocatedTotal,
+      revisedAmount,
+    };
+  }
+
+  const grouped = new Map();
+  scopes.forEach((scope) => grouped.set(scope.type || 'Unassigned', (grouped.get(scope.type || 'Unassigned') || 0) + asNumber(scope.allocatedAmount)));
+  return {
+    included: true,
+    allocations: [...grouped.entries()].map(([category, amount]) => ({ category, amount })),
+    reason: null,
+    allocatedTotal,
+    revisedAmount,
+  };
 };
 
 export const getCategoryRevenue = (project, category = ALL_CATEGORIES) => {
@@ -37,32 +78,101 @@ export const getCategoryRevenue = (project, category = ALL_CATEGORIES) => {
     return { matched: false, included: false, revenue: 0, reason: 'NO_CATEGORY_MATCH' };
   }
 
-  if (scopes.length === 1) {
-    return { matched: true, included: true, revenue: revisedAmount, reason: null };
-  }
-
-  const allocationsComplete = scopes.every(hasExplicitAllocation);
-  const allocatedTotal = scopes.reduce((sum, scope) => sum + asNumber(scope.allocatedAmount), 0);
-  const allocationsBalance = Math.abs(allocatedTotal - revisedAmount) <= 1;
-
-  if (!allocationsComplete || !allocationsBalance) {
+  const allocation = getProjectCategoryAllocations(project);
+  if (!allocation.included) {
     return {
       matched: true,
       included: false,
       revenue: 0,
-      reason: allocationsComplete ? 'ALLOCATION_TOTAL_MISMATCH' : 'ALLOCATION_REQUIRED',
-      allocatedTotal,
-      revisedAmount,
+      reason: allocation.reason,
+      allocatedTotal: allocation.allocatedTotal,
+      revisedAmount: allocation.revisedAmount,
     };
   }
 
   return {
     matched: true,
     included: true,
-    revenue: matchingScopes.reduce((sum, scope) => sum + asNumber(scope.allocatedAmount), 0),
+    revenue: allocation.allocations.filter((item) => item.category === category).reduce((sum, item) => sum + item.amount, 0),
     reason: null,
-    allocatedTotal,
-    revisedAmount,
+    allocatedTotal: allocation.allocatedTotal,
+    revisedAmount: allocation.revisedAmount,
+  };
+};
+
+export const createRecognizedRevenueCohort = (projects, options = {}) => {
+  const category = options.category || ALL_CATEGORIES;
+  const matchesPeriod = options.matchesPeriod || (() => true);
+  const getDate = options.getDate || ((project) => project.dateSold);
+  const included = [];
+  const excluded = [];
+  const cohort = [];
+
+  projects.forEach((project) => {
+    if (project.cancelled || !matchesProjectDimensions(project, options) || !matchesCategory(project, category)) return;
+    const date = getDate(project);
+    if (!date || !matchesPeriod(date)) return;
+    const revenue = getCategoryRevenue(project, category);
+    if (!revenue.matched) return;
+    cohort.push({ project, date });
+    if (revenue.included) included.push({ project, date, revenue: revenue.revenue });
+    else excluded.push({ project, date, reason: revenue.reason });
+  });
+
+  return {
+    cohort,
+    included,
+    excluded,
+    projectCount: cohort.length,
+    includedProjectCount: included.length,
+    excludedProjectCount: excluded.length,
+    value: included.reduce((sum, item) => sum + item.revenue, 0),
+  };
+};
+
+export const createCompletionPaymentDetails = (projects, options = {}) => {
+  const category = options.category || ALL_CATEGORIES;
+  const matchesPeriod = options.matchesPeriod || (() => true);
+  const included = [];
+  const awaitingCollection = [];
+  const missingCollectionDate = [];
+  const invalidCollectionDate = [];
+
+  projects.forEach((project) => {
+    if (project.cancelled || !matchesProjectDimensions(project, options) || !matchesCategory(project, category)) return;
+    const completionDate = getProjectCompletionDate(project);
+    if (!completionDate || !matchesPeriod(completionDate)) return;
+    const collectedOrFunded = Boolean(project.collected || project.funded);
+    const collectionDate = project.collectedDate || project.fundedDate || '';
+    const base = { project, completionDate, collectionDate };
+    if (!collectedOrFunded) {
+      awaitingCollection.push({ ...base, reason: 'AWAITING_COLLECTION' });
+      return;
+    }
+    if (!collectionDate) {
+      missingCollectionDate.push({ ...base, reason: 'MISSING_COLLECTION_DATE' });
+      return;
+    }
+    const days = daysBetween(collectionDate, completionDate);
+    if (days < 0) {
+      invalidCollectionDate.push({ ...base, days, reason: 'INVALID_DATE_ORDER' });
+      return;
+    }
+    included.push({ ...base, days });
+  });
+
+  const excluded = [...awaitingCollection, ...missingCollectionDate, ...invalidCollectionDate];
+  return {
+    included,
+    excluded,
+    awaitingCollection,
+    missingCollectionDate,
+    invalidCollectionDate,
+    measuredProjectCount: included.length,
+    awaitingCollectionCount: awaitingCollection.length,
+    missingCollectionDateCount: missingCollectionDate.length,
+    invalidCollectionDateCount: invalidCollectionDate.length,
+    averageDays: included.length ? included.reduce((sum, item) => sum + item.days, 0) / included.length : null,
   };
 };
 
@@ -164,82 +274,31 @@ export const createSalesStats = (projects, salesActivity = [], options = {}) => 
 };
 
 export const createSalesVsProductionMetrics = (projects, options = {}) => {
-  const region = options.region || ALL_CATEGORIES;
-  const category = options.category || ALL_CATEGORIES;
-  const matchesPeriod = options.matchesPeriod || (() => true);
-  const unresolved = new Set();
-  let soldValue = 0;
-  let completedValue = 0;
-  let soldProjects = 0;
-  let completedProjects = 0;
-
-  projects.filter((project) => matchesRegion(project, region) && matchesCategory(project, category) && !project.cancelled)
-    .forEach((project) => {
-      const revenue = getCategoryRevenue(project, category);
-      if (matchesPeriod(project.dateSold)) {
-        soldProjects += 1;
-        if (revenue.included) soldValue += revenue.revenue;
-        else unresolved.add(project.id);
-      }
-
-      const completionDate = getProjectCompletionDate(project);
-      if (completionDate && matchesPeriod(completionDate)) {
-        completedProjects += 1;
-        if (revenue.included) completedValue += revenue.revenue;
-        else unresolved.add(project.id);
-      }
-    });
+  const sold = createRecognizedRevenueCohort(projects, { ...options, getDate: (project) => project.dateSold });
+  const completed = createRecognizedRevenueCohort(projects, { ...options, getDate: getProjectCompletionDate });
+  const unresolved = new Set([...sold.excluded, ...completed.excluded].map((item) => item.project.id));
 
   return {
-    soldValue,
-    completedValue,
-    soldProjects,
-    completedProjects,
-    backlogMovement: soldValue - completedValue,
-    productionToSalesRatio: soldValue ? completedValue / soldValue : 0,
+    soldValue: sold.value,
+    completedValue: completed.value,
+    soldProjects: sold.projectCount,
+    completedProjects: completed.projectCount,
+    backlogMovement: sold.value - completed.value,
+    productionToSalesRatio: sold.value ? completed.value / sold.value : 0,
     unallocatedProjects: unresolved.size,
   };
 };
 
 export const createCollectionMetrics = (projects, options = {}) => {
-  const region = options.region || ALL_CATEGORIES;
-  const category = options.category || ALL_CATEGORIES;
-  const matchesPeriod = options.matchesPeriod || (() => true);
-  const cycleDays = [];
-  let openProjects = 0;
-  let collectedProjects = 0;
-  let missingCollectionDate = 0;
-  let invalidCollectionDate = 0;
-
-  projects.filter((project) => matchesRegion(project, region) && matchesCategory(project, category) && !project.cancelled)
-    .forEach((project) => {
-      const completionDate = getProjectCompletionDate(project);
-      if (!completionDate || !matchesPeriod(completionDate)) return;
-      if (!project.collected) {
-        openProjects += 1;
-        return;
-      }
-
-      collectedProjects += 1;
-      if (!project.collectedDate) {
-        missingCollectionDate += 1;
-        return;
-      }
-
-      const days = daysBetween(project.collectedDate, completionDate);
-      if (days < 0) invalidCollectionDate += 1;
-      else cycleDays.push(days);
-    });
+  const details = createCompletionPaymentDetails(projects, options);
 
   return {
-    openProjects,
-    collectedProjects,
-    missingCollectionDate,
-    invalidCollectionDate,
-    measuredProjects: cycleDays.length,
-    avgCompletionToPayment: cycleDays.length
-      ? Math.round(cycleDays.reduce((sum, days) => sum + days, 0) / cycleDays.length)
-      : 0,
+    openProjects: details.awaitingCollectionCount,
+    collectedProjects: details.measuredProjectCount + details.missingCollectionDateCount + details.invalidCollectionDateCount,
+    missingCollectionDate: details.missingCollectionDateCount,
+    invalidCollectionDate: details.invalidCollectionDateCount,
+    measuredProjects: details.measuredProjectCount,
+    avgCompletionToPayment: details.averageDays === null ? 0 : Math.round(details.averageDays),
   };
 };
 

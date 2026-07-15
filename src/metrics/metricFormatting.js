@@ -13,3 +13,24 @@ export const formatMetricValue = (value, format = 'count', compact = true) => {
   if (format === 'ratio') return exactNumber.format(number);
   return compact && Math.abs(number) >= 10000 ? compactNumber.format(number) : exactNumber.format(number);
 };
+
+export const getComparisonPresentation = (metric = {}) => {
+  const percent = metric.comparisonPercentChange ?? metric.comparisonChange;
+  const absolute = metric.comparisonAbsoluteChange;
+  if ((percent === null || percent === undefined) && (absolute === null || absolute === undefined)) return null;
+  const change = percent ?? absolute;
+  const direction = change === 0 ? 'flat' : change > 0 ? 'up' : 'down';
+  const preference = metric.improvementDirection || 'neutral';
+  const sentiment = direction === 'flat' || preference === 'neutral'
+    ? 'neutral'
+    : ((direction === 'up' && preference === 'higher') || (direction === 'down' && preference === 'lower') ? 'favorable' : 'unfavorable');
+  const changeText = percent !== null && percent !== undefined
+    ? `${Math.abs(percent * 100).toFixed(1)}%`
+    : formatMetricValue(Math.abs(absolute), metric.format, false);
+  return {
+    direction,
+    sentiment,
+    changeText,
+    label: metric.comparisonLabel || 'comparison period',
+  };
+};

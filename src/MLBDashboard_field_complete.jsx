@@ -1139,6 +1139,8 @@ export default function MLBDashboard() {
   const [salesActivityRecords, setSalesActivityRecords] = useState(() => loadSalesActivity());
   const [salesActivityDraft, setSalesActivityDraft] = useState(() => ({ activityDate: todayISO(), salesperson: '', region: 'Virginia', leadSource: '', category: 'All', leads: '', opportunities: '' }));
   const [salesCategoryFilter, setSalesCategoryFilter] = useState('All');
+  const [salespersonFilter, setSalespersonFilter] = useState('All');
+  const [salesLeadSourceFilter, setSalesLeadSourceFilter] = useState('All');
   const canManageSalesActivity = hasRuntimeCapability(CAPABILITY.MANAGE_SALES_DATA);
   const [initialNavigation] = useState(() => getInitialNavigation());
   const [mainArea, setMainArea] = useState(initialNavigation.mainArea);
@@ -1418,15 +1420,24 @@ export default function MLBDashboard() {
   }, [filteredProjects, flatScopes, allAlerts]);
 
   const categoryFilteredProjects = useMemo(() => filteredProjects.filter((project) => (
-    salesCategoryFilter === 'All' || project.scopes.some((scope) => scope.type === salesCategoryFilter)
-  )), [filteredProjects, salesCategoryFilter]);
+    (salesCategoryFilter === 'All' || project.scopes.some((scope) => scope.type === salesCategoryFilter))
+    && (salespersonFilter === 'All' || project.salesperson === salespersonFilter)
+    && (salesLeadSourceFilter === 'All' || project.leadSource === salesLeadSourceFilter)
+  )), [filteredProjects, salesCategoryFilter, salespersonFilter, salesLeadSourceFilter]);
 
   const filteredSalesActivity = useMemo(() => salesActivityRecords.filter((activity) => {
     const regionMatch = regionFilter === 'All' || activity.region === regionFilter;
     const periodMatch = isInPeriod(activity.activityDate, periodFilter, customPeriodStart, customPeriodEnd);
     const categoryMatch = salesCategoryFilter === 'All' || activity.category === salesCategoryFilter;
-    return regionMatch && periodMatch && categoryMatch;
-  }), [salesActivityRecords, regionFilter, periodFilter, customPeriodStart, customPeriodEnd, salesCategoryFilter]);
+    const salespersonMatch = salespersonFilter === 'All' || activity.salesperson === salespersonFilter;
+    const leadSourceMatch = salesLeadSourceFilter === 'All' || activity.leadSource === salesLeadSourceFilter;
+    return regionMatch && periodMatch && categoryMatch && salespersonMatch && leadSourceMatch;
+  }), [salesActivityRecords, regionFilter, periodFilter, customPeriodStart, customPeriodEnd, salesCategoryFilter, salespersonFilter, salesLeadSourceFilter]);
+
+  const salesFilterOptions = useMemo(() => ({
+    salespeople: [...new Set([...projects.map((project) => project.salesperson), ...salesActivityRecords.map((record) => record.salesperson)].filter(Boolean))].sort(),
+    leadSources: [...new Set([...projects.map((project) => project.leadSource), ...salesActivityRecords.map((record) => record.leadSource)].filter(Boolean))].sort(),
+  }), [projects, salesActivityRecords]);
 
   const salesStats = useMemo(
     () => createMetricSalesStats(categoryFilteredProjects, filteredSalesActivity, { category: salesCategoryFilter }),
@@ -1437,13 +1448,17 @@ export default function MLBDashboard() {
   const salesVsProduction = useMemo(() => createSalesVsProductionMetrics(projects, {
     region: regionFilter,
     category: salesCategoryFilter,
+    salesperson: salespersonFilter,
+    leadSource: salesLeadSourceFilter,
     matchesPeriod: metricPeriodMatch,
-  }), [projects, regionFilter, salesCategoryFilter, periodFilter, customPeriodStart, customPeriodEnd]);
+  }), [projects, regionFilter, salesCategoryFilter, salespersonFilter, salesLeadSourceFilter, periodFilter, customPeriodStart, customPeriodEnd]);
   const collectionMetrics = useMemo(() => createCollectionMetrics(projects, {
     region: regionFilter,
     category: salesCategoryFilter,
+    salesperson: salespersonFilter,
+    leadSource: salesLeadSourceFilter,
     matchesPeriod: metricPeriodMatch,
-  }), [projects, regionFilter, salesCategoryFilter, periodFilter, customPeriodStart, customPeriodEnd]);
+  }), [projects, regionFilter, salesCategoryFilter, salespersonFilter, salesLeadSourceFilter, periodFilter, customPeriodStart, customPeriodEnd]);
   const categoryIntegrity = useMemo(
     () => createCategoryIntegritySummary(categoryFilteredProjects, salesCategoryFilter),
     [categoryFilteredProjects, salesCategoryFilter],
@@ -1454,11 +1469,11 @@ export default function MLBDashboard() {
     customEnd: customPeriodEnd,
     region: regionFilter,
     productCategory: salesCategoryFilter,
-    salesperson: 'All',
-    leadSource: 'All',
+    salesperson: salespersonFilter,
+    leadSource: salesLeadSourceFilter,
     paymentType: 'All',
     status: 'All',
-  }), [periodFilter, customPeriodStart, customPeriodEnd, regionFilter, salesCategoryFilter]);
+  }), [periodFilter, customPeriodStart, customPeriodEnd, regionFilter, salesCategoryFilter, salespersonFilter, salesLeadSourceFilter]);
   const buildMetric = useCallback((id, filters) => createMetricResult({ id, projects, salesActivity: salesActivityRecords, filters }), [projects, salesActivityRecords]);
   const openMetricDrilldown = (id, trigger) => {
     metricTriggerRef.current = trigger || document.activeElement;
@@ -1923,8 +1938,7 @@ export default function MLBDashboard() {
       />
       <MetricCard label="Deposits Held" value={currency(pipelineMetrics.totalDeposits)} detail="Cash collected at sale" />
       <MetricCard
-        label="Open Alerts"
-        value={pipelineMetrics.alertCount}
+        metric={buildMetric(METRIC_IDS.OPEN_BOTTLENECKS, workspaceMetricFilters)}
         detail="Production bottlenecks"
         tone={pipelineMetrics.alertCount ? 'bg-red-50' : 'bg-green-50'}
         ariaLabel="Open alerts metric drilldown"
@@ -1932,7 +1946,7 @@ export default function MLBDashboard() {
       />
       <MetricCard label="Scheduled Scopes" value={pipelineMetrics.scheduledCount} detail="Not yet completed" />
       <MetricCard label="Avg Sold to Done" value={`${pipelineMetrics.avgSoldToDone || '-'}d`} detail="Completed scopes only" />
-      <MetricCard label="Complete to Payment" value={collectionMetrics.measuredProjects ? `${collectionMetrics.avgCompletionToPayment}d` : '-'} detail={`${collectionMetrics.openProjects} completed awaiting payment`} tone={collectionMetrics.openProjects ? 'bg-amber-50' : 'bg-white'} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.COMPLETION_TO_PAYMENT, trigger)} />
+      <MetricCard metric={buildMetric(METRIC_IDS.COMPLETION_TO_PAYMENT, workspaceMetricFilters)} detail={`${collectionMetrics.openProjects} completed awaiting payment`} tone={collectionMetrics.openProjects ? 'bg-amber-50' : 'bg-white'} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.COMPLETION_TO_PAYMENT, trigger)} />
     </div>
   );
 
@@ -2047,11 +2061,11 @@ export default function MLBDashboard() {
               <h2 className="text-xl font-black text-slate-900">Sales and Production Capacity</h2>
               <p className="mt-1 text-sm text-slate-500">Revenue comes only from saved Project Files. Lead activity records volumes for prospects that never become projects.</p>
             </div>
-            <label className="text-xs font-black uppercase tracking-wide text-slate-600">Product Category
-              <select value={salesCategoryFilter} onChange={(event) => setSalesCategoryFilter(event.target.value)} className="mt-1 block min-w-48 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold normal-case text-slate-800">
-                <option>All</option>{PRODUCT_CATEGORIES.map((category) => <option key={category}>{category}</option>)}
-              </select>
-            </label>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <label className="text-xs font-black uppercase tracking-wide text-slate-600">Product Category<select value={salesCategoryFilter} onChange={(event) => setSalesCategoryFilter(event.target.value)} className="mt-1 block min-w-44 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold normal-case text-slate-800"><option>All</option>{PRODUCT_CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></label>
+              <label className="text-xs font-black uppercase tracking-wide text-slate-600">Salesperson<select value={salespersonFilter} onChange={(event) => setSalespersonFilter(event.target.value)} className="mt-1 block min-w-44 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold normal-case text-slate-800"><option>All</option>{salesFilterOptions.salespeople.map((value) => <option key={value}>{value}</option>)}</select></label>
+              <label className="text-xs font-black uppercase tracking-wide text-slate-600">Lead Source<select value={salesLeadSourceFilter} onChange={(event) => setSalesLeadSourceFilter(event.target.value)} className="mt-1 block min-w-44 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold normal-case text-slate-800"><option>All</option>{salesFilterOptions.leadSources.map((value) => <option key={value}>{value}</option>)}</select></label>
+            </div>
           </div>
           {unresolvedRevenue > 0 && <p className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">{unresolvedRevenue} multi-scope project{unresolvedRevenue === 1 ? '' : 's'} match this category but are excluded from category revenue until scope allocations equal the revised project total.</p>}
         </section>
@@ -2820,10 +2834,6 @@ export default function MLBDashboard() {
               )}
             </div>
             <Help id="global-admin-menu" />
-            <button data-help-id="global-new-project" type="button" onClick={() => openProjectFile(emptyProject(), { initialTab: 'overview' })} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
-              <Plus size={16} className="mr-2 inline" /> New Project
-            </button>
-            <Help id="global-new-project" />
           </div>
         </div>
 
