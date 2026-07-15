@@ -9,3 +9,4 @@ export * from './productionCalculations';
 export * from './productionDataset';
 export * from './legacyProjectAdapter';
 export * from './legacyToProduction';
+export * from './productionToLegacy';
