@@ -1,6 +1,6 @@
 # MLB Dashboard Supabase Backend
 
-This directory contains the shared Supabase/Postgres backend, authentication configuration, migrations, Edge Functions, local seed data, and production operations guidance for the MLB Dashboard.
+This directory contains the shared Supabase/Postgres backend, authentication foundation, local-development configuration, migrations, Edge Functions, and operational runbooks for the MLB Dashboard.
 
 ## Architecture
 
@@ -10,13 +10,19 @@ The backend provides:
 - Versioned SQL migrations.
 - Local Docker-based development.
 - Invitation-only Supabase Auth.
-- Application profiles and role permissions.
 - Row Level Security.
 - Realtime change notifications.
-- Edge Functions for privileged invitations.
+- A protected Edge Function for user invitations.
 - Database backup and restore support.
 
-The React dashboard retains local storage as an immediate compatibility cache around the current nested legacy component. Shared operation requires both Supabase data and Supabase authentication modes.
+The React dashboard continues to use local storage as an immediate compatibility cache. Shared synchronization activates only when:
+
+1. `VITE_DATA_PROVIDER=supabase`.
+2. `VITE_AUTH_MODE=supabase`.
+3. The Supabase URL and publishable key are configured.
+4. The browser has a valid Supabase session.
+5. The Auth account is linked to an active `user_profiles` record.
+6. The shared database contains jobs, or an authorized administrator explicitly bootstraps it.
 
 ## Local development
 
@@ -35,44 +41,38 @@ npm run db:reset
 npm run db:lint
 ```
 
-The local Studio URL is configured as:
+Local Studio:
 
 ```txt
 http://127.0.0.1:54323
 ```
 
-Create or refresh a local owner:
+Create the local owner:
 
 ```bash
 LOCAL_OWNER_EMAIL='owner@example.com' \
-LOCAL_OWNER_PASSWORD='local-test-password-at-least-12-characters' \
+LOCAL_OWNER_PASSWORD='local-password-at-least-12-characters' \
 LOCAL_OWNER_NAME='Local MLB Owner' \
 npm run auth:bootstrap-local
 ```
 
-Run the authenticated smoke test:
+Verify authentication:
 
 ```bash
 LOCAL_OWNER_EMAIL='owner@example.com' \
-LOCAL_OWNER_PASSWORD='local-test-password-at-least-12-characters' \
+LOCAL_OWNER_PASSWORD='local-password-at-least-12-characters' \
 npm run auth:verify-local
 ```
 
-Detailed authentication setup is documented in:
-
-```txt
-supabase/AUTHENTICATION.md
-```
-
-Stop the local stack:
+Stop the stack:
 
 ```bash
 npm run supabase:stop
 ```
 
-## Migration order
+## Canonical migration sequence
 
-Migrations are stored in `supabase/migrations/` and currently apply in this order:
+Migrations are stored in `supabase/migrations/`.
 
 ```txt
 20260715000100_phase4_initial_schema.sql
@@ -81,26 +81,23 @@ Migrations are stored in `supabase/migrations/` and currently apply in this orde
 20260715000400_phase5_authentication_and_roles.sql
 20260715000500_phase5_profile_self_service.sql
 20260715000600_phase5_profile_function_fix.sql
+20260715000700_phase5_user_profile_rpc_only.sql
+20260715000800_phase5_password_activation_guard.sql
 ```
 
-Together they provide:
+The Phase 5 migrations provide:
 
-- Customers, leads, jobs, and work scopes.
-- Change orders.
-- Team members and crews.
-- User profiles linked to Supabase Auth.
-- Status events and activity logs.
-- Import runs and app settings.
-- Foreign keys, indexes, and record-revision triggers.
-- RLS helpers and policies.
-- Backend-status and data-health views.
-- First-owner bootstrap.
-- Invite, activation, deactivation, and last-seen metadata.
-- Current-user permission context.
-- Invitation activation and session-touch RPCs.
-- Protected role/status administration with last-owner safeguards.
-- Self-service display-name update.
-- Realtime publication entries.
+- Invitation, activation, deactivation, and last-seen metadata.
+- Auth-account to application-profile linkage.
+- Server-calculated access context.
+- Invitation activation after password setup.
+- Login/session recording.
+- Role, status, team, and region administration.
+- Last-active-owner protection.
+- Activity history for access changes.
+- Self-service display-name updates.
+- RPC/service-role-only writes to `user_profiles`.
+- Database verification that an invited account has a password before activation.
 
 Do not create two migration files with the same timestamp/version prefix.
 
@@ -108,18 +105,24 @@ Do not create two migration files with the same timestamp/version prefix.
 
 The database is closed to anonymous operational access.
 
-A Supabase Auth account must also have a linked application profile. Operational access requires an active profile.
+An Auth account must also have an application profile. Operational data requires an active profile.
 
-Phase 5 supports:
+Phase 5 includes:
 
 - Sign in and sign out.
-- Password recovery.
-- Invitation acceptance through password creation.
-- User lifecycle administration.
-- Owner safeguards.
-- Role-aware browser authorization.
-- Collection-scoped shared saves.
+- Invitation acceptance.
+- Password recovery and update.
+- User administration.
+- Role capabilities.
+- Team-member and region assignments.
 - Wallboard-only accounts.
+- Owner safeguards.
+
+Current limitations:
+
+- Salesperson ownership-scoped editing is deferred while the UI writes one nested legacy dataset.
+- Region assignments are stored and administered, but database-level region row filtering is not yet activated.
+- Optimistic conflict resolution is not yet implemented.
 
 See:
 
@@ -128,31 +131,32 @@ See:
 - `../project-docs/phase-5-authentication-and-roles.md`
 - `../project-docs/phase-5-role-matrix.md`
 
-## Invitation Edge Function
+## Edge Function
 
-The secured invitation function is:
+The protected invitation function is:
 
 ```txt
 supabase/functions/invite-user/index.ts
 ```
 
-It verifies the caller, checks the active application role, creates the Supabase Auth invitation, creates the linked invited profile, rolls back failed profile creation, and records invitation activity.
+It verifies the caller, checks the caller's active application role, creates the Auth invitation using the server-side service role, creates the linked invited profile, and records the action.
 
-Deploy to a linked remote project:
+Deploy:
 
 ```bash
+npx supabase link --project-ref <project-ref>
 npx supabase secrets set \
-  AUTH_ALLOWED_ORIGINS='https://approved-dashboard.example' \
-  AUTH_INVITE_REDIRECT_URL='https://approved-dashboard.example/?authAction=accept-invite'
-
-npx supabase functions deploy invite-user
+  AUTH_ALLOWED_ORIGINS='https://<approved-dashboard-origin>' \
+  AUTH_INVITE_REDIRECT_URL='https://<approved-dashboard-origin>/<path>?authAction=accept-invite' \
+  --project-ref <project-ref>
+npx supabase functions deploy invite-user --project-ref <project-ref>
 ```
 
-The service-role key stays inside the function environment and must never enter browser code.
+The service-role key never enters the browser bundle.
 
 ## Seed data
 
-Local development seed data is stored in:
+Local seed data is stored in:
 
 ```txt
 supabase/seed.sql
@@ -160,7 +164,7 @@ supabase/seed.sql
 
 It contains clearly labeled demo records and invalid example email domains. It is not live MLB data.
 
-Resetting the local database reapplies all migrations and seed data:
+Resetting reapplies migrations and seed data:
 
 ```bash
 npm run db:reset
@@ -168,12 +172,12 @@ npm run db:reset
 
 ## Environment separation
 
-Use separate Supabase projects for:
+Use separate projects:
 
 | Environment | Purpose |
 |---|---|
-| Local | Migrations, seed data, authentication testing, and automated validation |
-| Development | Shared user acceptance and role testing |
+| Local | Migrations, seed data, authentication tests, and automated validation |
+| Development | Shared UAT and role testing |
 | Production | Live MLB operational records |
 
 Never point local development at production.
@@ -191,7 +195,7 @@ VITE_AUTH_PASSWORD_MIN_LENGTH=12
 VITE_ENABLE_REALTIME=true
 ```
 
-Server/CLI/function-only values must not use a `VITE_` prefix:
+Server/CLI-only values must not use the `VITE_` prefix:
 
 ```txt
 SUPABASE_ACCESS_TOKEN
@@ -210,51 +214,11 @@ npx supabase link --project-ref <project-ref>
 npm run db:push
 ```
 
-Apply and validate migrations in the development project before production.
+Apply and validate in development before production.
 
-## First owner
+## Initial owner
 
-Follow:
-
-```txt
-supabase/FIRST_OWNER.md
-```
-
-After the first owner signs in, later users should be invited through **Users, Roles, and Access**.
-
-## Shared-data bootstrap
-
-The browser never automatically uploads local cache data into an empty shared database.
-
-After authentication and profile setup:
-
-1. Sign in as an authorized administrator.
-2. Open **Backend Administration**.
-3. Confirm backend health and record counts.
-4. Choose **Bootstrap Empty Backend**.
-5. Confirm the operation.
-
-Bootstrap is blocked when shared jobs already exist.
-
-## Administration entry points
-
-Authorized accounts may open:
-
-```txt
-?backendAdmin=1
-```
-
-for backend health, counts, quality issues, bootstrap, and export.
-
-Owner and Business Admin accounts may open:
-
-```txt
-?userAdmin=1
-```
-
-for invitations, roles, lifecycle state, regions, and team-member links.
-
-Query parameters do not bypass role checks.
+Follow `FIRST_OWNER.md` to create and link the first owner. Use the dashboard user-administration panel for all later invitations.
 
 ## Backup and restore
 
@@ -264,7 +228,7 @@ Backup:
 DATABASE_URL='...' npm run db:backup
 ```
 
-Guarded restore:
+Restore only after confirming the target:
 
 ```bash
 DATABASE_URL='...' \
@@ -277,17 +241,16 @@ Backup output is excluded from Git.
 
 ## CI validation
 
-`.github/workflows/backend-ci.yml` validates:
+`.github/workflows/backend-ci.yml` performs:
 
-1. Environment configuration.
-2. npm installation.
-3. React production build.
+1. Dependency installation.
+2. Environment validation.
+3. Production application build.
 4. Local Supabase startup.
-5. Database reset and migration application.
+5. Migration and seed reset.
 6. Database lint.
-7. Protected local-owner bootstrap.
-8. Publishable-key sign-in and current-user context.
-9. Sign-out.
-10. Supabase shutdown.
+7. Local owner bootstrap.
+8. Authentication smoke test.
+9. Local Supabase shutdown.
 
-Before remote activation, confirm the workflow and local role tests pass.
+Successful CI should be confirmed before applying Phase 5 to a shared development project.
