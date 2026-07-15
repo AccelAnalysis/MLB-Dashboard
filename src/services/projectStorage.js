@@ -39,10 +39,11 @@ export const loadProjects = (fallbackProjects = []) => {
 
 export const saveProjects = (projects, options = {}) => {
   const normalized = normalizeProjects(projects);
+  const previousProjects = loadProjects();
   const bypassAuthorization = Boolean(options.force || options.bypassAuthorization);
 
   if (!bypassAuthorization) {
-    const authorization = authorizeLegacyProjectWrite(loadProjects(), normalized);
+    const authorization = authorizeLegacyProjectWrite(previousProjects, normalized);
     if (!authorization.allowed) {
       dispatchAuthorizationDenied({ operation: 'saveProjects', ...authorization });
       return false;
@@ -50,6 +51,18 @@ export const saveProjects = (projects, options = {}) => {
   }
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+
+  if (!options.force && !options.skipProductionSync && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('mlb-legacy-projects-saved', {
+      detail: {
+        projects: normalized,
+        previousProjects,
+        source: options.source || 'new_project_open_file',
+        savedAt: new Date().toISOString(),
+      },
+    }));
+  }
+
   return true;
 };
 
@@ -103,7 +116,7 @@ export const importProjectsJson = async (file) => {
   return normalized;
 };
 
-// localStorage remains an immediate compatibility cache. Runtime authorization
-// prevents read-only or narrowly scoped roles from persisting unauthorized
-// changes before shared-backend synchronization. Remote hydration may bypass the
-// guard with saveProjects(projects, { force: true }).
+// localStorage remains the immediate compatibility cache used by the existing
+// New Project/Open File interface. Authorized user saves emit one normalized
+// production-sync event. Remote hydration and normalized compatibility refreshes
+// bypass that event with saveProjects(..., { force: true }).
