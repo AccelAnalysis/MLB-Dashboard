@@ -14,9 +14,14 @@ import {
   createLead,
   createWorkScope,
 } from '../src/domain/entityFactories.js';
-import { CHANGE_ORDER_STATUS, RECORD_STATUS } from '../src/domain/enums.js';
+import {
+  CHANGE_ORDER_STATUS,
+  PRODUCTION_STAGE,
+  RECORD_STATUS,
+} from '../src/domain/enums.js';
 import { createEmptyProductionDataset } from '../src/domain/productionDataset.js';
 import { convertProductionToLegacyProjects } from '../src/domain/productionToLegacy.js';
+import { normalizeOperationalRecordStatuses } from '../src/domain/recordLifecycle.js';
 
 const draft = createEmptyManualEntryDraft({ teamMemberId: 'TMB-SALES-1' });
 draft.customer.displayName = 'Phase 6 Test Customer';
@@ -66,9 +71,19 @@ const job = createJob({
   originalContractAmount: 25000,
   finalAmount: 26500,
   balanceDue: 26500,
+  productionStage: PRODUCTION_STAGE.COMPLETED,
 });
-const activeScope = createWorkScope({ jobId: job.id, category: 'Roofs' });
-const archivedScope = createWorkScope({ jobId: job.id, category: 'Repairs', recordStatus: RECORD_STATUS.ARCHIVED });
+const activeScope = createWorkScope({
+  jobId: job.id,
+  category: 'Roofs',
+  productionStage: PRODUCTION_STAGE.COMPLETED,
+});
+const archivedScope = createWorkScope({
+  jobId: job.id,
+  category: 'Repairs',
+  recordStatus: RECORD_STATUS.ARCHIVED,
+  productionStage: PRODUCTION_STAGE.COMPLETED,
+});
 const approvedOrder = createChangeOrder({
   jobId: job.id,
   status: CHANGE_ORDER_STATUS.APPROVED,
@@ -82,12 +97,17 @@ dataset.jobs.push(job);
 dataset.workScopes.push(activeScope, archivedScope);
 dataset.changeOrders.push(approvedOrder);
 
-const summaries = summarizeManualEntryJobs(dataset);
+const normalized = normalizeOperationalRecordStatuses(dataset);
+assert.equal(normalized.jobs[0].recordStatus, RECORD_STATUS.COMPLETED);
+assert.equal(normalized.workScopes[0].recordStatus, RECORD_STATUS.COMPLETED);
+assert.equal(normalized.workScopes[1].recordStatus, RECORD_STATUS.ARCHIVED);
+
+const summaries = summarizeManualEntryJobs(normalized);
 assert.equal(summaries.length, 1);
 assert.equal(summaries[0].scopeCount, 1);
 assert.deepEqual(summaries[0].scopeCategories, ['Roofs']);
 
-const legacy = convertProductionToLegacyProjects(dataset);
+const legacy = convertProductionToLegacyProjects(normalized);
 assert.equal(legacy.length, 1);
 assert.equal(legacy[0].scopes.length, 1);
 assert.equal(legacy[0].scopes[0].type, 'Roofs');
