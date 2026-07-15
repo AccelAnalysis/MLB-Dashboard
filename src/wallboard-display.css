@@ -151,45 +151,45 @@
 }
 
 /* Scope cards: preserve the information hierarchy while reducing clutter. */
-#root main > div[class~="fixed"][class~="inset-0"][class~="z-[60]"] [data-help-id="wallboard-status-columns"] [aria-label^="Open "] {
+#root main > div[class~="fixed"][class~="inset-0"][class~="z-[60]"] [data-help-id="wallboard-status-columns"] > div:last-child > div > div:last-child > div[class~="shadow"] {
   padding: 0.48rem !important;
   border-radius: 0.5rem !important;
   box-shadow: none !important;
 }
 
-#root main > div[class~="fixed"][class~="inset-0"][class~="z-[60]"] [data-help-id="wallboard-status-columns"] [aria-label^="Open "] h5 {
+#root main > div[class~="fixed"][class~="inset-0"][class~="z-[60]"] [data-help-id="wallboard-status-columns"] > div:last-child > div > div:last-child > div[class~="shadow"] h5 {
   font-size: clamp(0.82rem, 0.82vw, 1rem) !important;
   line-height: 1.05;
 }
 
-#root main > div[class~="fixed"][class~="inset-0"][class~="z-[60]"] [data-help-id="wallboard-status-columns"] [aria-label^="Open "] h5 + p {
+#root main > div[class~="fixed"][class~="inset-0"][class~="z-[60]"] [data-help-id="wallboard-status-columns"] > div:last-child > div > div:last-child > div[class~="shadow"] h5 + p {
   font-size: 0.62rem !important;
   line-height: 1.15;
 }
 
-#root main > div[class~="fixed"][class~="inset-0"][class~="z-[60]"] [data-help-id="wallboard-status-columns"] [aria-label^="Open "] > div:nth-child(2) {
+#root main > div[class~="fixed"][class~="inset-0"][class~="z-[60]"] [data-help-id="wallboard-status-columns"] > div:last-child > div > div:last-child > div[class~="shadow"] > div:nth-child(2) {
   margin-top: 0.38rem !important;
   gap: 0.18rem 0.35rem !important;
   font-size: 0.58rem !important;
   line-height: 1.15;
 }
 
-#root main > div[class~="fixed"][class~="inset-0"][class~="z-[60]"] [data-help-id="wallboard-status-columns"] [aria-label^="Open "] > div:nth-child(3) {
+#root main > div[class~="fixed"][class~="inset-0"][class~="z-[60]"] [data-help-id="wallboard-status-columns"] > div:last-child > div > div:last-child > div[class~="shadow"] > div:nth-child(3) {
   margin-top: 0.38rem !important;
   padding: 0.36rem !important;
 }
 
-#root main > div[class~="fixed"][class~="inset-0"][class~="z-[60]"] [data-help-id="wallboard-status-columns"] [aria-label^="Open "] > div:nth-child(3) p:first-child {
+#root main > div[class~="fixed"][class~="inset-0"][class~="z-[60]"] [data-help-id="wallboard-status-columns"] > div:last-child > div > div:last-child > div[class~="shadow"] > div:nth-child(3) p:first-child {
   font-size: 0.55rem !important;
 }
 
-#root main > div[class~="fixed"][class~="inset-0"][class~="z-[60]"] [data-help-id="wallboard-status-columns"] [aria-label^="Open "] > div:nth-child(3) p:last-child {
+#root main > div[class~="fixed"][class~="inset-0"][class~="z-[60]"] [data-help-id="wallboard-status-columns"] > div:last-child > div > div:last-child > div[class~="shadow"] > div:nth-child(3) p:last-child {
   font-size: 0.68rem !important;
   line-height: 1.15;
 }
 
 /* Date chips add noise at TV distance; status and next action remain visible. */
-#root main > div[class~="fixed"][class~="inset-0"][class~="z-[60]"] [data-help-id="wallboard-status-columns"] [aria-label^="Open "] > div:last-child[class~="gap-1"] {
+#root main > div[class~="fixed"][class~="inset-0"][class~="z-[60]"] [data-help-id="wallboard-status-columns"] > div:last-child > div > div:last-child > div[class~="shadow"] > div:last-child[class~="gap-1"] {
   display: none !important;
 }
 
