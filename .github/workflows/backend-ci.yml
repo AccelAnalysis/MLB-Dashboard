@@ -37,6 +37,16 @@ jobs:
       - name: Apply guarded metric integrity patch
         if: ${{ hashFiles('scripts/apply-metric-integrity-patch.mjs') != '' }}
         run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/apply-metric-integrity-patch.mjs')
+          source = path.read_text()
+          old = "      id: `SA-${Date.now()}`,"
+          new = "      id: 'SA-' + Date.now(),"
+          if source.count(old) != 1:
+              raise SystemExit(f'Expected one sales activity id template, found {source.count(old)}')
+          path.write_text(source.replace(old, new))
+          PY
           set +e
           node scripts/apply-metric-integrity-patch.mjs > /tmp/metric-patch.log 2>&1
           patch_status=$?
