@@ -9,7 +9,9 @@ npm install
 npm run dev
 ```
 
-Local mode is the default and uses a development owner identity without requiring credentials. When the local normalized dataset is empty, Phase 6 performs a one-time conversion of the existing nested project cache so current records are immediately available in Critical Path Entry.
+Local mode is the default and uses a development owner identity without requiring credentials. The visible operator workflow is **New Project -> Open File -> Edit Project**. Those saves are reconciled automatically into the normalized production dataset used by the backend.
+
+When the local normalized dataset is empty, the application performs a one-time conversion of the existing nested project cache. The compatibility records then carry private normalized IDs and revision metadata so the existing project editor can retain backend history and detect stale edits without exposing a second entry screen.
 
 ## Build and domain verification
 
@@ -57,7 +59,7 @@ Production-readiness and implementation documents are maintained in `project-doc
 - [Phase 4 Completion Status](project-docs/phase-4-completion-status.md)
 - [Phase 5 Authentication, Users, and Roles](project-docs/phase-5-authentication-and-roles.md)
 - [Phase 5 Role Matrix](project-docs/phase-5-role-matrix.md)
-- [Phase 6 Manual Entry and Critical Path Replacement](project-docs/phase-6-manual-entry-critical-path.md)
+- [Phase 6 Normalized Project-File Workflow](project-docs/phase-6-manual-entry-critical-path.md)
 - [Phase 6 Completion Status](project-docs/phase-6-completion-status.md)
 - [Modular Refactor Plan](project-docs/refactor-plan.md)
 - [Help System Specification](project-docs/help-system-spec.md)
@@ -90,7 +92,9 @@ Added invitation-only authentication, sign-in/sign-out, password recovery, invit
 
 ### Phase 6
 
-Added the normalized Critical Path Entry workspace, new sold-job intake, customer and lead attribution, multi-scope production tracking, intake and permits, work-order specifications, financial/change-order closeout, role-aware section editing, validation, revision conflict protection, activity/status history, archive/void behavior, local normalized bootstrap, and immediate refresh of the existing Book, meeting, dashboard, and Wallboard views.
+Integrated the normalized customer, lead, job, scope, change-order, status-history, and activity-history backend behind the existing New Project and Open File workflow. The duplicate Critical Path Entry workspace and `?manualEntry=1` route were removed. Project-file saves now retain normalized IDs and revisions, archive removed records instead of deleting history, void removed change orders, validate the production dataset, refresh every existing dashboard view, and restore the latest backend state when a stale or invalid edit is rejected.
+
+The original Phase 6 domain and service code remains available as backend infrastructure, but it is no longer presented as a separate operator interface.
 
 ## Production Data Model
 
@@ -103,19 +107,16 @@ schemas/production-dataset.schema.json
 
 ## Operational and administrative controls
 
-Users access operational controls from the lower-right account/tools button.
-
-Authorized roles may open:
-
-- **Critical Path Entry**
-- **Users, Roles, and Access**
-- **Backend Administration**
-
-Critical Path Entry is also addressable through:
+Daily project entry and maintenance occurs through:
 
 ```txt
-?manualEntry=1
+New Project -> Open File -> Edit Project -> Save Project File
 ```
+
+Users access account and administrative controls from the lower-right account/tools button. Authorized roles may open:
+
+- **Users, Roles, and Access**
+- **Backend Administration**
 
 The backend panel is addressable through:
 
@@ -129,7 +130,7 @@ The user panel is addressable through:
 ?userAdmin=1
 ```
 
-Query parameters do not bypass role checks.
+The retired `?manualEntry=1` flag is removed from the URL and does not open an entry workspace. Query parameters do not bypass role checks.
 
 ## GitHub Pages
 
