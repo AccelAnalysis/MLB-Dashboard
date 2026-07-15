@@ -12,3 +12,6 @@ yarn-error.log*
 # Supabase local development state
 supabase/.branches/
 supabase/.temp/
+
+# Local database backup output
+backups/
