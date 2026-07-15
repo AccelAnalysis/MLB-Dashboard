@@ -9,11 +9,12 @@ npm install
 npm run dev
 ```
 
-Local mode is the default and uses a development owner identity without requiring credentials.
+Local mode is the default and uses a development owner identity without requiring credentials. When the local normalized dataset is empty, Phase 6 performs a one-time conversion of the existing nested project cache so current records are immediately available in Critical Path Entry.
 
-## Build
+## Build and domain verification
 
 ```bash
+npm run phase6:verify
 npm run build
 ```
 
@@ -56,6 +57,8 @@ Production-readiness and implementation documents are maintained in `project-doc
 - [Phase 4 Completion Status](project-docs/phase-4-completion-status.md)
 - [Phase 5 Authentication, Users, and Roles](project-docs/phase-5-authentication-and-roles.md)
 - [Phase 5 Role Matrix](project-docs/phase-5-role-matrix.md)
+- [Phase 6 Manual Entry and Critical Path Replacement](project-docs/phase-6-manual-entry-critical-path.md)
+- [Phase 6 Completion Status](project-docs/phase-6-completion-status.md)
 - [Modular Refactor Plan](project-docs/refactor-plan.md)
 - [Help System Specification](project-docs/help-system-spec.md)
 
@@ -85,6 +88,10 @@ Added the Supabase/Postgres schema, migrations, RLS, realtime repository, local 
 
 Added invitation-only authentication, sign-in/sign-out, password recovery, invitation activation, user lifecycle management, role administration, owner safeguards, browser authorization, role-scoped shared saves, account controls, and Wallboard-only access.
 
+### Phase 6
+
+Added the normalized Critical Path Entry workspace, new sold-job intake, customer and lead attribution, multi-scope production tracking, intake and permits, work-order specifications, financial/change-order closeout, role-aware section editing, validation, revision conflict protection, activity/status history, archive/void behavior, local normalized bootstrap, and immediate refresh of the existing Book, meeting, dashboard, and Wallboard views.
+
 ## Production Data Model
 
 The production dataset contract is versioned as `3.0.0` and documented in:
@@ -94,16 +101,23 @@ src/domain/
 schemas/production-dataset.schema.json
 ```
 
-## Administration
+## Operational and administrative controls
 
-Authenticated users access account controls from the lower-right account button.
+Users access operational controls from the lower-right account/tools button.
 
 Authorized roles may open:
 
+- **Critical Path Entry**
 - **Users, Roles, and Access**
 - **Backend Administration**
 
-The backend panel is also addressable through:
+Critical Path Entry is also addressable through:
+
+```txt
+?manualEntry=1
+```
+
+The backend panel is addressable through:
 
 ```txt
 ?backendAdmin=1
