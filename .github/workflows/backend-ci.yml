@@ -45,7 +45,13 @@ jobs:
           new = "      id: 'SA-' + Date.now(),"
           if source.count(old) != 1:
               raise SystemExit(f'Expected one sales activity id template, found {source.count(old)}')
-          path.write_text(source.replace(old, new))
+          source = source.replace(old, new)
+          marker = '// Active dashboard UI and calculations.'
+          if source.count(marker) != 1:
+              raise SystemExit('Dashboard generation marker is missing or duplicated')
+          before, after = source.split(marker, 1)
+          after = after.replace('${', r'\${')
+          path.write_text(before + marker + after)
           PY
           set +e
           node scripts/apply-metric-integrity-patch.mjs > /tmp/metric-patch.log 2>&1
