@@ -11,10 +11,8 @@ import {
 } from '../services/legacyWorkflowSyncService';
 import { loadProjects, saveProjects } from '../services/projectStorage';
 import {
-  getSharedSyncDebounceMs,
   isSharedProjectBackendEnabled,
   loadSharedProjects,
-  saveSharedProjects,
   subscribeToSharedProjectChanges,
 } from '../services/sharedProjectStorage';
 
@@ -62,12 +60,6 @@ export default function MLBDashboard() {
   const capabilities = profile?.capabilities || {};
   const canManageUsers = Boolean(capabilities[CAPABILITY.MANAGE_USERS]);
   const canManageBackend = Boolean(capabilities[CAPABILITY.MANAGE_BACKEND]);
-  const canWriteSharedData = Boolean(
-    capabilities[CAPABILITY.MANAGE_SALES_DATA]
-    || capabilities[CAPABILITY.MANAGE_PRODUCTION_DATA]
-    || capabilities[CAPABILITY.MANAGE_FINANCIAL_DATA],
-  );
-
   const [instanceKey, setInstanceKey] = useState(0);
   const [authorizationMessage, setAuthorizationMessage] = useState('');
   const [backendAdminOpen, setBackendAdminOpen] = useState(
@@ -78,9 +70,8 @@ export default function MLBDashboard() {
   );
   const disposedRef = useRef(false);
   const sharedReadyRef = useRef(false);
-  const lastLocalSnapshotRef = useRef('');
-  const saveTimerRef = useRef(null);
   const refreshTimerRef = useRef(null);
+  const productionReadyRef = useRef(Promise.resolve());
   const productionSyncQueueRef = useRef(Promise.resolve());
 
   useEffect(() => {
@@ -117,10 +108,11 @@ export default function MLBDashboard() {
     if (!profile) return undefined;
     let active = true;
 
-    initializeLegacyWorkflowProduction({ projects: loadProjects(), profile })
+    const initialization = initializeLegacyWorkflowProduction({ projects: loadProjects(), profile });
+    productionReadyRef.current = initialization;
+    initialization
       .then(() => {
         if (!active) return;
-        lastLocalSnapshotRef.current = serializeProjects(loadProjects());
         setInstanceKey((current) => current + 1);
       })
       .catch((error) => {
@@ -142,6 +134,7 @@ export default function MLBDashboard() {
 
       productionSyncQueueRef.current = productionSyncQueueRef.current
         .catch(() => {})
+        .then(() => productionReadyRef.current.catch(() => {}))
         .then(() => syncLegacyProjectsToProduction({
           projects,
           previousProjects,
@@ -149,13 +142,11 @@ export default function MLBDashboard() {
           capabilities,
         }))
         .then((result) => {
-          lastLocalSnapshotRef.current = serializeProjects(loadProjects());
           if (result?.saved || result?.reason === 'NO_NORMALIZED_CHANGES') {
             setInstanceKey((current) => current + 1);
           }
         })
         .catch((error) => {
-          lastLocalSnapshotRef.current = serializeProjects(loadProjects());
           setAuthorizationMessage(error.message || 'The normalized production backend rejected the project-file change.');
           setInstanceKey((current) => current + 1);
         });
@@ -168,7 +159,6 @@ export default function MLBDashboard() {
   useEffect(() => {
     disposedRef.current = false;
     let unsubscribe = () => {};
-    let pollTimer = null;
 
     const emitStatus = (detail) => {
       window.dispatchEvent(new CustomEvent('mlb-shared-backend-status', { detail }));
@@ -179,8 +169,6 @@ export default function MLBDashboard() {
     const applyRemoteProjects = (projects) => {
       const nextSnapshot = serializeProjects(projects);
       const currentSnapshot = serializeProjects(readLocalProjects());
-      lastLocalSnapshotRef.current = nextSnapshot;
-
       if (nextSnapshot === currentSnapshot || disposedRef.current) return;
 
       saveProjects(projects, { force: true });
@@ -200,23 +188,9 @@ export default function MLBDashboard() {
       refreshTimerRef.current = window.setTimeout(refreshFromRemote, 250);
     };
 
-    const scheduleRemoteSave = (projects, snapshot) => {
-      window.clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = window.setTimeout(async () => {
-        const result = await saveSharedProjects(projects);
-        emitStatus({ operation: 'save', ...result });
-        if (result.saved) lastLocalSnapshotRef.current = snapshot;
-        if (!result.saved && result.error) {
-          setAuthorizationMessage(result.error.message || 'The shared backend rejected the change.');
-          setInstanceKey((current) => current + 1);
-        }
-      }, getSharedSyncDebounceMs());
-    };
-
     const initializeSharedBackend = async () => {
+      await productionReadyRef.current.catch(() => {});
       const localProjects = readLocalProjects();
-      lastLocalSnapshotRef.current = serializeProjects(localProjects);
-
       if (!isSharedProjectBackendEnabled()) {
         emitStatus({
           operation: 'initialize',
@@ -237,18 +211,6 @@ export default function MLBDashboard() {
         applyRemoteProjects(result.projects);
         unsubscribe = subscribeToSharedProjectChanges(scheduleRemoteRefresh);
       }
-
-      if (canWriteSharedData) {
-        pollTimer = window.setInterval(() => {
-          if (!sharedReadyRef.current || disposedRef.current) return;
-
-          const projects = readLocalProjects();
-          const snapshot = serializeProjects(projects);
-          if (snapshot === lastLocalSnapshotRef.current) return;
-
-          scheduleRemoteSave(projects, snapshot);
-        }, 1000);
-      }
     };
 
     initializeSharedBackend();
@@ -257,11 +219,9 @@ export default function MLBDashboard() {
       disposedRef.current = true;
       sharedReadyRef.current = false;
       unsubscribe();
-      window.clearInterval(pollTimer);
-      window.clearTimeout(saveTimerRef.current);
       window.clearTimeout(refreshTimerRef.current);
     };
-  }, [canWriteSharedData, profile?.id]);
+  }, [profile?.id]);
 
   return (
     <>
