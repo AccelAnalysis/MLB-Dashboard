@@ -1,6 +1,7 @@
 import { convertLegacyProjectsToProduction } from '../../domain/legacyToProduction';
 import { normalizeLegacyProjects } from '../../domain/legacyProjectAdapter';
 import { createEmptyProductionDataset } from '../../domain/productionDataset';
+import { normalizeOperationalRecordStatuses } from '../../domain/recordLifecycle';
 import { validateProductionDataset } from '../../domain/validation';
 import { BackendError } from '../backendErrors';
 
@@ -46,8 +47,9 @@ export class LocalProductionRepository {
       if (!Array.isArray(parsed) || !parsed.length) return null;
       const conversion = convertLegacyProjectsToProduction(normalizeLegacyProjects(parsed));
       if (!conversion.validation.valid) return null;
-      this.storage.setItem(LOCAL_PRODUCTION_DATASET_KEY, JSON.stringify(conversion.dataset));
-      return conversion.dataset;
+      const normalized = normalizeOperationalRecordStatuses(conversion.dataset);
+      this.storage.setItem(LOCAL_PRODUCTION_DATASET_KEY, JSON.stringify(normalized));
+      return normalized;
     } catch {
       return null;
     }
@@ -55,9 +57,9 @@ export class LocalProductionRepository {
 
   async loadDataset() {
     const raw = this.storage.getItem(LOCAL_PRODUCTION_DATASET_KEY);
-    const dataset = raw
-      ? JSON.parse(raw)
-      : this.loadLegacyBootstrapDataset() || createEmptyProductionDataset();
+    const dataset = normalizeOperationalRecordStatuses(
+      raw ? JSON.parse(raw) : this.loadLegacyBootstrapDataset() || createEmptyProductionDataset(),
+    );
     const validation = validateProductionDataset(dataset);
 
     if (!validation.valid) {
@@ -74,7 +76,8 @@ export class LocalProductionRepository {
   }
 
   async saveDataset(dataset) {
-    const validation = validateProductionDataset(dataset);
+    const normalized = normalizeOperationalRecordStatuses(dataset);
+    const validation = validateProductionDataset(normalized);
     if (!validation.valid) {
       throw new BackendError('Refusing to save an invalid local production dataset.', {
         code: 'INVALID_DATASET',
@@ -85,7 +88,7 @@ export class LocalProductionRepository {
       });
     }
 
-    this.storage.setItem(LOCAL_PRODUCTION_DATASET_KEY, JSON.stringify(dataset));
+    this.storage.setItem(LOCAL_PRODUCTION_DATASET_KEY, JSON.stringify(normalized));
     window.dispatchEvent(new CustomEvent('mlb-production-dataset-saved', {
       detail: { provider: this.provider, savedAt: new Date().toISOString() },
     }));
