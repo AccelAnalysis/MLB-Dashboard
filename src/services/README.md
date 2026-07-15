@@ -1,19 +1,54 @@
 # Services Layer
 
-The services layer should contain persistence, imports/exports, integrations, and other side-effectful code. Phase 2 keeps the existing local-storage service in place and does not add backend dependencies.
+The services layer contains persistence, imports/exports, integrations, and other side-effectful code. It should depend on the production domain model rather than redefining record shapes inside individual services.
 
-Current service modules:
+## Current Service Modules
 
-- `projectStorage.js` — local prototype persistence, backup export/import normalization, and reset behavior.
+- `projectStorage.js` — local prototype persistence, JSON backup export/import, and reset behavior.
 
-Future production service modules should be added incrementally:
+The prototype storage service now delegates legacy record normalization to:
+
+```txt
+src/domain/legacyProjectAdapter.js
+```
+
+This prevents storage code from becoming an undocumented data model and preserves a clean migration boundary.
+
+## Production Domain Contract
+
+Future services should consume the normalized exports under:
+
+```txt
+src/domain/
+```
+
+Important boundaries include:
+
+- Entity factories and normalization.
+- Dataset validation.
+- Field source-of-truth rules.
+- Legacy-to-production migration.
+- Financial calculations.
+- Entity relationship definitions.
+
+## Future Production Services
+
+Add these incrementally after the backend and authentication approach are approved:
 
 - `authService.js`
 - `permissionService.js`
 - `auditLogService.js`
-- `projectRepository.js`
+- `customerRepository.js`
+- `jobRepository.js`
+- `workScopeRepository.js`
 - `importStagingService.js`
 - `jobNimbusAdapter.js`
 - `reportingService.js`
 
-Do not connect external systems until the production data model and source-of-truth matrix are approved.
+## Guardrails
+
+- Do not let JobNimbus adapters write directly into UI state.
+- Do not let import services overwrite dashboard-owned fields without consulting `src/domain/sourceOfTruth.js`.
+- Do not duplicate entity normalization inside repositories.
+- Do not delete audit/status history when business records are archived.
+- Do not switch the active prototype to normalized storage without a tested migration and rollback plan.
