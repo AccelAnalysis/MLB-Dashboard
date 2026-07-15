@@ -20,8 +20,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VITE_DATA_PROVIDER: ${{ vars.VITE_DATA_PROVIDER || 'local' }}
+      VITE_AUTH_MODE: ${{ vars.VITE_AUTH_MODE || vars.VITE_DATA_PROVIDER || 'local' }}
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_AUTH_REDIRECT_URL: ${{ vars.VITE_AUTH_REDIRECT_URL }}
+      VITE_AUTH_INVITE_FUNCTION: ${{ vars.VITE_AUTH_INVITE_FUNCTION || 'invite-user' }}
+      VITE_AUTH_PASSWORD_MIN_LENGTH: ${{ vars.VITE_AUTH_PASSWORD_MIN_LENGTH || '12' }}
       VITE_ENABLE_REALTIME: ${{ vars.VITE_ENABLE_REALTIME || 'true' }}
 
     steps:
@@ -40,7 +44,7 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Validate backend environment
+      - name: Validate backend and authentication environment
         run: npm run backend:check
 
       - name: Build
