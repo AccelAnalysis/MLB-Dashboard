@@ -4,6 +4,7 @@ import MLBDashboard from './MLBDashboard_field_complete.jsx';
 import './index.css';
 import './mlb-brand.css';
 import './wallboard-display.css';
+import './mlb-logo.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
