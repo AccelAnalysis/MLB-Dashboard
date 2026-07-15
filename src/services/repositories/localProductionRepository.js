@@ -1,8 +1,11 @@
+import { convertLegacyProjectsToProduction } from '../../domain/legacyToProduction';
+import { normalizeLegacyProjects } from '../../domain/legacyProjectAdapter';
 import { createEmptyProductionDataset } from '../../domain/productionDataset';
 import { validateProductionDataset } from '../../domain/validation';
 import { BackendError } from '../backendErrors';
 
 export const LOCAL_PRODUCTION_DATASET_KEY = 'mlb-dashboard-production-dataset-v3';
+const LEGACY_PROJECT_STORAGE_KEY = 'mlb-dashboard-projects-v1';
 
 export class LocalProductionRepository {
   constructor(storage = window.localStorage) {
@@ -34,9 +37,27 @@ export class LocalProductionRepository {
     };
   }
 
+  loadLegacyBootstrapDataset() {
+    const legacyRaw = this.storage.getItem(LEGACY_PROJECT_STORAGE_KEY);
+    if (!legacyRaw) return null;
+
+    try {
+      const parsed = JSON.parse(legacyRaw);
+      if (!Array.isArray(parsed) || !parsed.length) return null;
+      const conversion = convertLegacyProjectsToProduction(normalizeLegacyProjects(parsed));
+      if (!conversion.validation.valid) return null;
+      this.storage.setItem(LOCAL_PRODUCTION_DATASET_KEY, JSON.stringify(conversion.dataset));
+      return conversion.dataset;
+    } catch {
+      return null;
+    }
+  }
+
   async loadDataset() {
     const raw = this.storage.getItem(LOCAL_PRODUCTION_DATASET_KEY);
-    const dataset = raw ? JSON.parse(raw) : createEmptyProductionDataset();
+    const dataset = raw
+      ? JSON.parse(raw)
+      : this.loadLegacyBootstrapDataset() || createEmptyProductionDataset();
     const validation = validateProductionDataset(dataset);
 
     if (!validation.valid) {
