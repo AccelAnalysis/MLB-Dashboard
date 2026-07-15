@@ -74,7 +74,6 @@ if (!authUser) {
 } else {
   const { data, error } = await admin.auth.admin.updateUserById(authUser.id, {
     password,
-    email_confirm: true,
     user_metadata: {
       ...authUser.user_metadata,
       display_name: displayName,
