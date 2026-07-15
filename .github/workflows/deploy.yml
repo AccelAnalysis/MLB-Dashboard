@@ -18,6 +18,11 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      VITE_DATA_PROVIDER: ${{ vars.VITE_DATA_PROVIDER || 'local' }}
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_ENABLE_REALTIME: ${{ vars.VITE_ENABLE_REALTIME || 'true' }}
 
     steps:
       - name: Checkout
@@ -29,8 +34,14 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Reconcile lockfile metadata
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --no-audit --no-fund
+
+      - name: Validate backend environment
+        run: npm run backend:check
 
       - name: Build
         run: npm run build
