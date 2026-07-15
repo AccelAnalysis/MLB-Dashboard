@@ -15,10 +15,12 @@ import {
   updateMyDisplayName,
   updatePassword,
 } from '../services/authService';
+import { setRuntimeAccessContext } from './runtimeAuthorization';
 
 const AuthContext = createContext(null);
 
 const loadingSnapshot = {
+  mode: 'local',
   ready: false,
   authenticated: false,
   accessState: 'loading',
@@ -29,10 +31,22 @@ const loadingSnapshot = {
   recoveryRequired: false,
 };
 
+const applyRuntimeContext = (snapshot) => {
+  setRuntimeAccessContext({
+    provider: snapshot?.mode || 'local',
+    profile: snapshot?.profile || null,
+  });
+};
+
 export function AuthProvider({ children }) {
-  const [snapshot, setSnapshot] = useState(loadingSnapshot);
+  const [snapshot, setSnapshotState] = useState(loadingSnapshot);
   const [working, setWorking] = useState(false);
   const [actionError, setActionError] = useState(null);
+
+  const setSnapshot = useCallback((next) => {
+    applyRuntimeContext(next);
+    setSnapshotState(next);
+  }, []);
 
   const refresh = useCallback(async () => {
     setWorking(true);
@@ -47,7 +61,7 @@ export function AuthProvider({ children }) {
     } finally {
       setWorking(false);
     }
-  }, []);
+  }, [setSnapshot]);
 
   useEffect(() => {
     let disposed = false;
@@ -83,7 +97,7 @@ export function AuthProvider({ children }) {
       disposed = true;
       unsubscribe();
     };
-  }, []);
+  }, [setSnapshot]);
 
   const login = useCallback(async (credentials) => {
     setWorking(true);
@@ -98,7 +112,7 @@ export function AuthProvider({ children }) {
     } finally {
       setWorking(false);
     }
-  }, []);
+  }, [setSnapshot]);
 
   const logout = useCallback(async () => {
     setWorking(true);
@@ -113,7 +127,7 @@ export function AuthProvider({ children }) {
     } finally {
       setWorking(false);
     }
-  }, []);
+  }, [setSnapshot]);
 
   const requestPasswordReset = useCallback(async (email) => {
     setWorking(true);
@@ -132,8 +146,7 @@ export function AuthProvider({ children }) {
     setWorking(true);
     setActionError(null);
     try {
-      await updatePassword(password);
-      const next = await getAuthSnapshot({ recordLogin: false });
+      const next = await updatePassword(password);
       setSnapshot({ ...next, recoveryRequired: false, event: 'USER_UPDATED' });
       return next;
     } catch (error) {
@@ -142,14 +155,18 @@ export function AuthProvider({ children }) {
     } finally {
       setWorking(false);
     }
-  }, []);
+  }, [setSnapshot]);
 
   const changeDisplayName = useCallback(async (displayName) => {
     setWorking(true);
     setActionError(null);
     try {
       const profile = await updateMyDisplayName(displayName);
-      setSnapshot((current) => ({ ...current, profile }));
+      setSnapshotState((current) => {
+        const next = { ...current, profile };
+        applyRuntimeContext(next);
+        return next;
+      });
       return profile;
     } catch (error) {
       setActionError(error);
