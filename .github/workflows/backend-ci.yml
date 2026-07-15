@@ -19,6 +19,12 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      VITE_DATA_PROVIDER: local
+      VITE_AUTH_MODE: local
+      LOCAL_OWNER_EMAIL: phase5-owner@example.invalid
+      LOCAL_OWNER_PASSWORD: phase5-ci-password-2026-only
+      LOCAL_OWNER_NAME: Phase 5 CI Owner
 
     steps:
       - name: Checkout
@@ -36,6 +42,9 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Validate environment configuration
+        run: npm run backend:check
+
       - name: Build application
         run: npm run build
 
@@ -47,6 +56,12 @@ jobs:
 
       - name: Lint database
         run: npm run db:lint
+
+      - name: Bootstrap local owner
+        run: npm run auth:bootstrap-local
+
+      - name: Verify local authentication
+        run: npm run auth:verify-local
 
       - name: Stop local Supabase
         if: always()
