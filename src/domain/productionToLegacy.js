@@ -35,6 +35,10 @@ const toLegacyChangeOrder = (record, index) => ({
   date: record.approvedAt || record.requestedAt || '',
   description: record.description || '',
   amount: Number(record.amount || 0),
+  _production: {
+    changeOrderId: record.id,
+    revision: Number(record.revision || 0),
+  },
 });
 
 const toLegacyScope = (record) => ({
@@ -54,6 +58,10 @@ const toLegacyScope = (record) => ({
   completionDate: record.dates?.completed || '',
   specs: record.specs || {},
   notes: record.notes || '',
+  _production: {
+    scopeId: record.id,
+    revision: Number(record.revision || 0),
+  },
 });
 
 /**
@@ -61,6 +69,10 @@ const toLegacyScope = (record) => ({
  * project records used by the stabilized prototype UI. Archived normalized
  * records remain available for audit/history but are excluded from active
  * operator, Book, meeting, and Wallboard projections.
+ *
+ * Private `_production` metadata travels with the compatibility record so the
+ * existing New Project/Open File editor can retain stable normalized IDs and
+ * detect stale edits without displaying a second entry interface.
  */
 export const convertProductionToLegacyProjects = (dataset = {}) => {
   const customers = new Map((dataset.customers || []).map((item) => [item.id, item]));
@@ -127,6 +139,14 @@ export const convertProductionToLegacyProjects = (dataset = {}) => {
       notes: job.notes || customer.notes || '',
       decisionNeeded: job.decisionNeeded || '',
       scopes,
+      _production: {
+        jobId: job.id,
+        jobRevision: Number(job.revision || 0),
+        customerId: customer.id || '',
+        customerRevision: Number(customer.revision || 0),
+        leadId: lead.id || '',
+        leadRevision: Number(lead.revision || 0),
+      },
     };
   });
 
