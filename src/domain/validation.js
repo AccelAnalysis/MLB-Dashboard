@@ -69,6 +69,8 @@ export const validateWorkScope = (record) => {
   validateMetadata(record, errors);
   if (!isNonEmptyText(record?.jobId)) errors.push('jobId is required');
   if (!isNonEmptyText(record?.category)) errors.push('category is required');
+  if (record?.allocatedAmount !== null && record?.allocatedAmount !== undefined && !isFiniteNumber(record.allocatedAmount)) errors.push('allocatedAmount must be numeric when supplied');
+  if (Number(record?.allocatedAmount || 0) < 0) errors.push('allocatedAmount cannot be negative');
   if (!enumValues(PRODUCTION_STAGE).includes(record?.productionStage)) errors.push('productionStage is invalid');
   if (!isObject(record?.dates)) errors.push('dates must be an object');
   if (!isObject(record?.specs)) errors.push('specs must be an object');

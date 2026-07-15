@@ -23,6 +23,8 @@ const financialShape = (project = {}) => ({
   paymentType: project.paymentType || '',
   originalAmount: Number(project.originalAmount || 0),
   deposit: Number(project.deposit || 0),
+  amountCollected: Number(project.amountCollected || 0),
+  collectedDate: project.collectedDate || '',
   collected: Boolean(project.collected),
   thankYouSent: Boolean(project.thankYouSent),
   cancelled: Boolean(project.cancelled),
