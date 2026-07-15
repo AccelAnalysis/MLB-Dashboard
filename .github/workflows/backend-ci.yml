@@ -52,24 +52,7 @@ jobs:
         run: npm run build
 
       - name: Start local Supabase
-        id: supabase_start
-        continue-on-error: true
-        run: npm run supabase:start > /tmp/supabase-start.log 2>&1
-
-      - name: Upload Supabase startup log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: supabase-start-log
-          path: /tmp/supabase-start.log
-          if-no-files-found: error
-          retention-days: 3
-
-      - name: Require Supabase startup
-        if: ${{ steps.supabase_start.outcome != 'success' }}
-        run: |
-          tail -n 80 /tmp/supabase-start.log
-          exit 1
+        run: npm run supabase:start
 
       - name: Apply migrations and seed data
         run: npm run db:reset
