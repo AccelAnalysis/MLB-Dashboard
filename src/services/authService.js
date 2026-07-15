@@ -4,27 +4,15 @@ import {
   AUTH_REDIRECT_URL,
   isAuthenticationConfigured,
 } from '../config/authConfig';
-import { USER_ROLE, USER_STATUS } from '../domain/enums';
-import { mergeServerCapabilities } from '../auth/permissions';
+import { USER_STATUS } from '../domain/enums';
+import {
+  createLocalOwnerProfile,
+  mergeServerCapabilities,
+} from '../auth/permissions';
 import { BackendError, normalizeBackendError } from './backendErrors';
 import { getSupabaseClient } from './supabaseClient';
 
-const LOCAL_PROFILE = Object.freeze({
-  id: 'USR-LOCAL-OWNER',
-  authUserId: 'local-development-user',
-  displayName: 'Local Development Owner',
-  email: 'local@mlb-dashboard.invalid',
-  role: USER_ROLE.OWNER,
-  status: USER_STATUS.ACTIVE,
-  teamMemberId: '',
-  regionAccess: ['Virginia', 'Carolina'],
-  lastLoginAt: '',
-  invitedAt: '',
-  acceptedAt: '',
-  passwordUpdatedAt: '',
-  disabledReason: '',
-  capabilities: mergeServerCapabilities(USER_ROLE.OWNER),
-});
+const LOCAL_PROFILE = Object.freeze(createLocalOwnerProfile());
 
 let cachedContext = null;
 
@@ -43,11 +31,39 @@ const createSnapshot = (input = {}) => ({
   ...input,
 });
 
+const mapServerPermissions = (profile) => {
+  const permissions = profile?.permissions || {};
+  const manageBusiness = Boolean(permissions.manageBusiness);
+  const manageSales = Boolean(permissions.manageSales);
+  const manageProduction = Boolean(permissions.manageProduction);
+  const manageFinancials = Boolean(permissions.manageFinancials);
+
+  return {
+    viewDashboard: permissions.operatorDashboard !== false,
+    viewWallboard: permissions.wallboard !== false,
+    manageUsers: Boolean(permissions.manageUsers),
+    manageBackend: Boolean(permissions.manageBackend),
+    backendAdministration: Boolean(permissions.manageBackend),
+    manageBusinessData: manageBusiness,
+    manageSalesData: manageSales,
+    manageProductionData: manageProduction,
+    manageFinancialData: manageFinancials,
+    createProjects: manageBusiness,
+    importExport: Boolean(permissions.importExport),
+    resetData: Boolean(permissions.resetData),
+    legacyFullWrite: manageBusiness && manageSales && manageProduction && manageFinancials,
+    readOnly: !(manageSales || manageProduction || manageFinancials),
+    wallboardOnly: profile?.role === 'wallboard',
+  };
+};
+
 const enrichProfile = (profile) => {
   if (!profile || !profile.id) return null;
   return {
     ...profile,
-    capabilities: mergeServerCapabilities(profile.role, profile.capabilities),
+    teamMemberId: profile.teamMemberId || '',
+    regionAccess: Array.isArray(profile.regionAccess) ? profile.regionAccess : [],
+    capabilities: mergeServerCapabilities(profile.role, mapServerPermissions(profile)),
   };
 };
 
@@ -58,6 +74,20 @@ const authError = (error, operation, fallbackMessage) => normalizeBackendError(e
   fallbackMessage,
   recoverable: true,
 });
+
+const readUrlAction = () => {
+  if (typeof window === 'undefined') return '';
+  const query = new URLSearchParams(window.location.search);
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  return query.get('authAction') || query.get('type') || hash.get('type') || '';
+};
+
+const withAuthAction = (action) => {
+  if (typeof window === 'undefined') return AUTH_REDIRECT_URL;
+  const url = new URL(AUTH_REDIRECT_URL || `${window.location.origin}${window.location.pathname}`);
+  url.searchParams.set('authAction', action);
+  return url.toString();
+};
 
 const resolveSupabaseContext = async ({
   session: suppliedSession,
@@ -80,10 +110,10 @@ const resolveSupabaseContext = async ({
   }
 
   try {
-    const { data, error } = await client.rpc(recordLogin ? 'record_app_login' : 'get_current_user_context');
+    const { data, error } = await client.rpc('get_my_access_context');
     if (error) throw error;
 
-    const profile = enrichProfile(data);
+    let profile = enrichProfile(data);
     if (!profile) {
       const snapshot = createSnapshot({
         event,
@@ -102,11 +132,23 @@ const resolveSupabaseContext = async ({
       return snapshot;
     }
 
+    if (recordLogin && profile.status === USER_STATUS.ACTIVE) {
+      const { error: touchError } = await client.rpc('touch_my_session');
+      if (touchError) console.warn('Unable to record login/session activity.', touchError);
+      profile = { ...profile, lastSeenAt: new Date().toISOString() };
+    }
+
     const accessState = profile.status === USER_STATUS.ACTIVE
       ? 'active'
       : profile.status === USER_STATUS.INACTIVE
         ? 'inactive'
         : 'invited';
+
+    const urlAction = readUrlAction();
+    const recoveryRequired = event === 'PASSWORD_RECOVERY'
+      || urlAction === 'reset-password'
+      || urlAction === 'accept-invite'
+      || accessState === 'invited';
 
     const snapshot = createSnapshot({
       event,
@@ -115,25 +157,18 @@ const resolveSupabaseContext = async ({
       user: session.user,
       profile,
       accessState,
-      recoveryRequired: event === 'PASSWORD_RECOVERY',
+      recoveryRequired,
     });
     cachedContext = snapshot;
     return snapshot;
   } catch (error) {
-    const normalized = authError(error, recordLogin ? 'recordLogin' : 'getCurrentUserContext', 'Unable to resolve the MLB Dashboard user profile.');
-    const message = String(normalized.message || '').toLowerCase();
-    const accessState = message.includes('inactive')
-      ? 'inactive'
-      : message.includes('no mlb dashboard user profile') || message.includes('not linked')
-        ? 'unlinked'
-        : 'error';
-
+    const normalized = authError(error, 'getMyAccessContext', 'Unable to resolve the MLB Dashboard user profile.');
     const snapshot = createSnapshot({
       event,
       session,
       authenticated: true,
       user: session.user,
-      accessState,
+      accessState: 'error',
       error: normalized,
       recoveryRequired: event === 'PASSWORD_RECOVERY',
     });
@@ -230,7 +265,7 @@ export const sendPasswordReset = async (email) => {
 
   const { error } = await getSupabaseClient().auth.resetPasswordForEmail(
     String(email || '').trim().toLowerCase(),
-    { redirectTo: AUTH_REDIRECT_URL },
+    { redirectTo: withAuthAction('reset-password') },
   );
   if (error) throw authError(error, 'sendPasswordReset', 'Unable to send the password-reset email.');
   return { sent: true };
@@ -246,16 +281,17 @@ export const updatePassword = async (password) => {
     });
   }
 
-  if (AUTH_MODE === 'local') return { updated: true };
+  if (AUTH_MODE === 'local') return getAuthSnapshot({ recordLogin: false });
 
   const client = getSupabaseClient();
   const { error } = await client.auth.updateUser({ password: nextPassword });
   if (error) throw authError(error, 'updatePassword', 'Unable to update the password.');
 
-  const { error: auditError } = await client.rpc('record_password_update');
-  if (auditError) throw authError(auditError, 'recordPasswordUpdate', 'Password changed, but the profile timestamp could not be recorded.');
+  const { error: activationError } = await client.rpc('activate_my_invitation');
+  if (activationError) throw authError(activationError, 'activateInvitation', 'Password changed, but the dashboard profile could not be activated.');
 
-  return { updated: true };
+  cachedContext = null;
+  return resolveSupabaseContext({ event: 'USER_UPDATED', recordLogin: true });
 };
 
 export const updateMyDisplayName = async (displayName) => {
@@ -270,6 +306,8 @@ export const updateMyDisplayName = async (displayName) => {
   if (cachedContext) cachedContext = { ...cachedContext, profile };
   return profile;
 };
+
+export const getInviteRedirectUrl = () => withAuthAction('accept-invite');
 
 export const clearCachedAuthContext = () => {
   cachedContext = null;
