@@ -1,0 +1,357 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accelanalysis.example/schemas/mlb-dashboard-production-model-3.0.0.json",
+  "title": "MLB Dashboard Production Dataset",
+  "type": "object",
+  "required": [
+    "schema",
+    "modelVersion",
+    "exportedAt",
+    "customers",
+    "leads",
+    "jobs",
+    "workScopes",
+    "changeOrders",
+    "statusEvents",
+    "activityLogs",
+    "users",
+    "teamMembers",
+    "crews",
+    "importRuns"
+  ],
+  "properties": {
+    "schema": { "const": "mlb-dashboard-production-model" },
+    "modelVersion": { "const": "3.0.0" },
+    "exportedAt": { "type": "string", "format": "date-time" },
+    "customers": { "type": "array", "items": { "$ref": "#/$defs/customer" } },
+    "leads": { "type": "array", "items": { "$ref": "#/$defs/lead" } },
+    "jobs": { "type": "array", "items": { "$ref": "#/$defs/job" } },
+    "workScopes": { "type": "array", "items": { "$ref": "#/$defs/workScope" } },
+    "changeOrders": { "type": "array", "items": { "$ref": "#/$defs/changeOrder" } },
+    "statusEvents": { "type": "array", "items": { "$ref": "#/$defs/statusEvent" } },
+    "activityLogs": { "type": "array", "items": { "$ref": "#/$defs/activityLog" } },
+    "users": { "type": "array", "items": { "$ref": "#/$defs/user" } },
+    "teamMembers": { "type": "array", "items": { "$ref": "#/$defs/teamMember" } },
+    "crews": { "type": "array", "items": { "$ref": "#/$defs/crew" } },
+    "importRuns": { "type": "array", "items": { "$ref": "#/$defs/importRun" } }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "recordMetadata": {
+      "type": "object",
+      "required": [
+        "id",
+        "modelVersion",
+        "recordStatus",
+        "sourceSystem",
+        "syncState",
+        "externalIds",
+        "createdAt",
+        "createdBy",
+        "updatedAt",
+        "updatedBy",
+        "revision"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "modelVersion": { "const": "3.0.0" },
+        "recordStatus": { "enum": ["active", "completed", "closed", "cancelled", "archived"] },
+        "sourceSystem": { "enum": ["dashboard", "jobnimbus", "spreadsheet", "manual_import", "accounting", "calculated"] },
+        "syncState": { "enum": ["local_only", "imported", "synced", "conflict", "error"] },
+        "externalIds": { "type": "object", "additionalProperties": { "type": "string" } },
+        "createdAt": { "type": "string", "minLength": 1 },
+        "createdBy": { "type": "string" },
+        "updatedAt": { "type": "string", "minLength": 1 },
+        "updatedBy": { "type": "string" },
+        "revision": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "customer": {
+      "allOf": [
+        { "$ref": "#/$defs/recordMetadata" },
+        {
+          "type": "object",
+          "required": ["displayName", "address", "tags"],
+          "properties": {
+            "displayName": { "type": "string", "minLength": 1 },
+            "firstName": { "type": "string" },
+            "lastName": { "type": "string" },
+            "companyName": { "type": "string" },
+            "phone": { "type": "string" },
+            "alternatePhone": { "type": "string" },
+            "email": { "type": "string" },
+            "address": {
+              "type": "object",
+              "required": ["line1", "line2", "city", "county", "state", "postalCode"],
+              "properties": {
+                "line1": { "type": "string" },
+                "line2": { "type": "string" },
+                "city": { "type": "string" },
+                "county": { "type": "string" },
+                "state": { "type": "string" },
+                "postalCode": { "type": "string" }
+              },
+              "additionalProperties": false
+            },
+            "preferredContactMethod": { "type": "string" },
+            "notes": { "type": "string" },
+            "tags": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      ]
+    },
+    "lead": {
+      "allOf": [
+        { "$ref": "#/$defs/recordMetadata" },
+        {
+          "type": "object",
+          "required": ["customerId", "status"],
+          "properties": {
+            "customerId": { "type": "string", "minLength": 1 },
+            "assignedSalespersonId": { "type": "string" },
+            "source": { "type": "string" },
+            "campaign": { "type": "string" },
+            "receivedAt": { "type": "string" },
+            "appointmentAt": { "type": "string" },
+            "pitchedAt": { "type": "string" },
+            "dispositionedAt": { "type": "string" },
+            "status": { "enum": ["new", "assigned", "appointment_set", "pitched", "sold", "lost", "cancelled"] },
+            "lostReason": { "type": "string" },
+            "notes": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "job": {
+      "allOf": [
+        { "$ref": "#/$defs/recordMetadata" },
+        {
+          "type": "object",
+          "required": [
+            "customerId",
+            "soldDate",
+            "productionStage",
+            "paymentStatus",
+            "originalContractAmount",
+            "finalAmount",
+            "depositAmount",
+            "amountPaid",
+            "balanceDue",
+            "intake",
+            "permit"
+          ],
+          "properties": {
+            "customerId": { "type": "string", "minLength": 1 },
+            "leadId": { "type": "string" },
+            "salespersonId": { "type": "string" },
+            "region": { "type": "string" },
+            "locationName": { "type": "string" },
+            "soldDate": { "type": "string", "minLength": 1 },
+            "productionStage": { "$ref": "#/$defs/productionStage" },
+            "paymentStatus": { "enum": ["not_invoiced", "deposit_due", "deposit_received", "balance_due", "funding_pending", "partially_paid", "paid", "written_off"] },
+            "paymentType": { "type": "string" },
+            "financingProvider": { "type": "string" },
+            "originalContractAmount": { "type": "number" },
+            "finalAmount": { "type": "number" },
+            "depositAmount": { "type": "number" },
+            "amountPaid": { "type": "number" },
+            "balanceDue": { "type": "number" },
+            "fundedAt": { "type": "string" },
+            "collectedAt": { "type": "string" },
+            "closedAt": { "type": "string" },
+            "cancelledAt": { "type": "string" },
+            "cancellationReason": { "type": "string" },
+            "decisionNeeded": { "type": "string" },
+            "notes": { "type": "string" },
+            "intake": { "type": "object" },
+            "permit": { "type": "object" }
+          }
+        }
+      ]
+    },
+    "workScope": {
+      "allOf": [
+        { "$ref": "#/$defs/recordMetadata" },
+        {
+          "type": "object",
+          "required": ["jobId", "category", "productionStage", "dates", "specs"],
+          "properties": {
+            "jobId": { "type": "string", "minLength": 1 },
+            "category": { "type": "string", "minLength": 1 },
+            "description": { "type": "string" },
+            "productionStage": { "$ref": "#/$defs/productionStage" },
+            "priority": { "type": "string" },
+            "measurerId": { "type": "string" },
+            "measurerName": { "type": "string" },
+            "crewId": { "type": "string" },
+            "crewName": { "type": "string" },
+            "vendor": { "type": "string" },
+            "dates": {
+              "type": "object",
+              "required": ["measureRequested", "measured", "materialListReceived", "materialsOrdered", "materialEta", "materialsReceived", "scheduledInstall", "started", "completed"],
+              "additionalProperties": { "type": "string" }
+            },
+            "specs": { "type": "object" },
+            "notes": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "changeOrder": {
+      "allOf": [
+        { "$ref": "#/$defs/recordMetadata" },
+        {
+          "type": "object",
+          "required": ["jobId", "status", "description", "amount", "customerApproved"],
+          "properties": {
+            "jobId": { "type": "string", "minLength": 1 },
+            "workScopeId": { "type": "string" },
+            "status": { "enum": ["draft", "pending_approval", "approved", "rejected", "void"] },
+            "requestedAt": { "type": "string" },
+            "approvedAt": { "type": "string" },
+            "description": { "type": "string", "minLength": 1 },
+            "reason": { "type": "string" },
+            "amount": { "type": "number" },
+            "customerApproved": { "type": "boolean" },
+            "approvedBy": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "statusEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/recordMetadata" },
+        {
+          "type": "object",
+          "required": ["entityType", "entityId", "toStatus", "occurredAt", "metadata"],
+          "properties": {
+            "entityType": { "type": "string", "minLength": 1 },
+            "entityId": { "type": "string", "minLength": 1 },
+            "fromStatus": { "type": "string" },
+            "toStatus": { "type": "string", "minLength": 1 },
+            "occurredAt": { "type": "string", "minLength": 1 },
+            "actorUserId": { "type": "string" },
+            "note": { "type": "string" },
+            "metadata": { "type": "object" }
+          }
+        }
+      ]
+    },
+    "activityLog": {
+      "allOf": [
+        { "$ref": "#/$defs/recordMetadata" },
+        {
+          "type": "object",
+          "required": ["action", "entityType", "entityId", "occurredAt", "changedFields", "context"],
+          "properties": {
+            "actorUserId": { "type": "string" },
+            "action": { "type": "string", "minLength": 1 },
+            "entityType": { "type": "string", "minLength": 1 },
+            "entityId": { "type": "string", "minLength": 1 },
+            "occurredAt": { "type": "string", "minLength": 1 },
+            "reason": { "type": "string" },
+            "changedFields": { "type": "array" },
+            "before": {},
+            "after": {},
+            "context": { "type": "object" }
+          }
+        }
+      ]
+    },
+    "user": {
+      "allOf": [
+        { "$ref": "#/$defs/recordMetadata" },
+        {
+          "type": "object",
+          "required": ["displayName", "email", "role", "status", "regionAccess"],
+          "properties": {
+            "displayName": { "type": "string", "minLength": 1 },
+            "email": { "type": "string", "minLength": 1 },
+            "role": { "enum": ["owner", "business_admin", "operations_admin", "sales_manager", "salesperson", "production_manager", "viewer", "wallboard", "developer_support"] },
+            "status": { "enum": ["invited", "active", "inactive"] },
+            "teamMemberId": { "type": "string" },
+            "regionAccess": { "type": "array", "items": { "type": "string" } },
+            "lastLoginAt": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "teamMember": {
+      "allOf": [
+        { "$ref": "#/$defs/recordMetadata" },
+        {
+          "type": "object",
+          "required": ["displayName", "salesperson", "productionStaff", "active", "regionAssignments"],
+          "properties": {
+            "displayName": { "type": "string", "minLength": 1 },
+            "employeeType": { "type": "string" },
+            "department": { "type": "string" },
+            "salesperson": { "type": "boolean" },
+            "productionStaff": { "type": "boolean" },
+            "active": { "type": "boolean" },
+            "phone": { "type": "string" },
+            "email": { "type": "string" },
+            "regionAssignments": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      ]
+    },
+    "crew": {
+      "allOf": [
+        { "$ref": "#/$defs/recordMetadata" },
+        {
+          "type": "object",
+          "required": ["name", "tradeCategories", "active"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "crewType": { "type": "string" },
+            "tradeCategories": { "type": "array", "items": { "type": "string" } },
+            "leadTeamMemberId": { "type": "string" },
+            "active": { "type": "boolean" },
+            "notes": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "importRun": {
+      "allOf": [
+        { "$ref": "#/$defs/recordMetadata" },
+        {
+          "type": "object",
+          "required": ["sourceSystem", "startedAt", "rowCount", "acceptedCount", "rejectedCount", "warnings", "errors"],
+          "properties": {
+            "importType": { "type": "string" },
+            "fileName": { "type": "string" },
+            "startedAt": { "type": "string", "minLength": 1 },
+            "completedAt": { "type": "string" },
+            "initiatedBy": { "type": "string" },
+            "rowCount": { "type": "number" },
+            "acceptedCount": { "type": "number" },
+            "rejectedCount": { "type": "number" },
+            "warnings": { "type": "array" },
+            "errors": { "type": "array" }
+          }
+        }
+      ]
+    },
+    "productionStage": {
+      "enum": [
+        "sold",
+        "contract_received",
+        "measure_requested",
+        "measured",
+        "material_list_received",
+        "materials_ordered",
+        "waiting_materials",
+        "materials_received",
+        "scheduled",
+        "in_progress",
+        "completed",
+        "funding_pending",
+        "collected",
+        "closed",
+        "cancelled"
+      ]
+    }
+  }
+}
