@@ -19,7 +19,7 @@ const json = (body: unknown, status = 200, origin = '*') => new Response(JSON.st
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Vary': 'Origin',
+    Vary: 'Origin',
   },
 });
 
@@ -36,6 +36,7 @@ const allowedOrigin = (requestOrigin: string | null) => {
 
 const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCase();
 const normalizeText = (value: unknown) => String(value || '').trim();
+const validEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
 Deno.serve(async (request) => {
   const origin = allowedOrigin(request.headers.get('Origin'));
@@ -92,29 +93,42 @@ Deno.serve(async (request) => {
   const displayName = normalizeText(body.displayName);
   const role = normalizeText(body.role) || 'viewer';
   const teamMemberId = normalizeText(body.teamMemberId) || null;
+  const invitationMessage = normalizeText(body.invitationMessage);
   const regionAccess = Array.isArray(body.regionAccess)
-    ? body.regionAccess.map(normalizeText).filter(Boolean)
+    ? [...new Set(body.regionAccess.map(normalizeText).filter(Boolean))]
     : [];
 
-  if (!email || !email.includes('@')) return json({ error: 'A valid email address is required.' }, 400, origin);
+  if (!validEmail(email)) return json({ error: 'A valid email address is required.' }, 400, origin);
   if (displayName.length < 2) return json({ error: 'Display name must contain at least two characters.' }, 400, origin);
   if (!ALLOWED_ROLES.has(role)) return json({ error: 'The selected role is invalid.' }, 400, origin);
   if (role === 'owner' && callerProfile.role !== 'owner') {
     return json({ error: 'Only an owner can invite another owner.' }, 403, origin);
   }
 
-  const { data: existingProfile } = await adminClient
+  const { data: existingProfile, error: existingError } = await adminClient
     .from('user_profiles')
     .select('id, status, auth_user_id')
     .ilike('email', email)
     .maybeSingle();
 
+  if (existingError) return json({ error: existingError.message }, 500, origin);
   if (existingProfile) {
     return json({
-      error: 'A dashboard profile already exists for this email address.',
+      error: 'A dashboard profile already exists for this email address. Update or reactivate that profile instead.',
       profileId: existingProfile.id,
       status: existingProfile.status,
     }, 409, origin);
+  }
+
+  if (teamMemberId) {
+    const { data: teamMember, error: teamMemberError } = await adminClient
+      .from('team_members')
+      .select('id')
+      .eq('id', teamMemberId)
+      .maybeSingle();
+
+    if (teamMemberError) return json({ error: teamMemberError.message }, 500, origin);
+    if (!teamMember) return json({ error: 'The selected team member does not exist.' }, 400, origin);
   }
 
   const configuredRedirect = normalizeText(Deno.env.get('AUTH_INVITE_REDIRECT_URL'));
@@ -133,7 +147,7 @@ Deno.serve(async (request) => {
     return json({ error: invitationError?.message || 'Unable to create the authentication invitation.' }, 400, origin);
   }
 
-  const profileId = `USR-${crypto.randomUUID()}`;
+  const profileId = `USR-${crypto.randomUUID().replaceAll('-', '').slice(0, 20).toUpperCase()}`;
   const now = new Date().toISOString();
   const { data: createdProfile, error: insertError } = await adminClient
     .from('user_profiles')
@@ -148,20 +162,36 @@ Deno.serve(async (request) => {
       region_access: regionAccess,
       invited_at: now,
       invited_by: callerProfile.id,
+      invitation_message: invitationMessage,
+      created_by: callerProfile.id,
+      updated_by: callerProfile.id,
       external_ids: { supabaseAuthUser: invitation.user.id },
       source_system: 'dashboard',
       sync_state: 'synced',
     })
-    .select('id, display_name, email, role, status, region_access, invited_at')
+    .select('id, display_name, email, role, status, team_member_id, region_access, invited_at')
     .single();
 
   if (insertError) {
-    await adminClient.auth.admin.deleteUser(invitation.user.id, true);
+    await adminClient.auth.admin.deleteUser(invitation.user.id).catch(() => undefined);
     return json({ error: `The invitation was rolled back because the dashboard profile could not be created: ${insertError.message}` }, 500, origin);
   }
 
-  return json({
-    invited: true,
-    profile: createdProfile,
-  }, 201, origin);
+  await adminClient.from('activity_logs').insert({
+    id: `ACT-INVITE-${crypto.randomUUID().replaceAll('-', '')}`,
+    actor_user_id: callerProfile.id,
+    action: 'user_invited',
+    entity_type: 'user_profile',
+    entity_id: createdProfile.id,
+    occurred_at: now,
+    reason: invitationMessage || 'Application invitation created.',
+    changed_fields: ['email', 'role', 'status', 'regionAccess'],
+    before: null,
+    after: { email, role, status: 'invited', regionAccess },
+    context: { authUserId: invitation.user.id },
+    source_system: 'dashboard',
+    sync_state: 'synced',
+  });
+
+  return json({ invited: true, profile: createdProfile }, 201, origin);
 });
