@@ -2,6 +2,12 @@ import {
   isLegacyProjectRecord,
   normalizeLegacyProjects,
 } from '../domain/legacyProjectAdapter';
+import { CAPABILITY } from '../auth/permissions';
+import {
+  authorizeDataOperation,
+  authorizeLegacyProjectWrite,
+  dispatchAuthorizationDenied,
+} from '../auth/runtimeAuthorization';
 
 export const STORAGE_KEY = 'mlb-dashboard-projects-v1';
 
@@ -16,11 +22,6 @@ const downloadTextFile = (filename, content, type) => {
   link.remove();
   URL.revokeObjectURL(url);
 };
-
-const canPersistLegacyProjects = () => (
-  typeof window === 'undefined'
-  || window.__MLB_LEGACY_CAN_WRITE__ !== false
-);
 
 export const normalizeProjects = (projects) => normalizeLegacyProjects(projects);
 
@@ -37,27 +38,57 @@ export const loadProjects = (fallbackProjects = []) => {
 };
 
 export const saveProjects = (projects, options = {}) => {
-  if (!options.force && !canPersistLegacyProjects()) return false;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeProjects(projects)));
+  const normalized = normalizeProjects(projects);
+  const bypassAuthorization = Boolean(options.force || options.bypassAuthorization);
+
+  if (!bypassAuthorization) {
+    const authorization = authorizeLegacyProjectWrite(loadProjects(), normalized);
+    if (!authorization.allowed) {
+      dispatchAuthorizationDenied({ operation: 'saveProjects', ...authorization });
+      return false;
+    }
+  }
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
   return true;
 };
 
-export const resetProjects = () => {
-  if (!canPersistLegacyProjects()) return false;
+export const resetProjects = (options = {}) => {
+  if (!options.force && !options.bypassAuthorization) {
+    const authorization = authorizeDataOperation(CAPABILITY.RESET_DATA, 'reset dashboard data');
+    if (!authorization.allowed) {
+      dispatchAuthorizationDenied({ operation: 'resetProjects', ...authorization });
+      return false;
+    }
+  }
+
   localStorage.removeItem(STORAGE_KEY);
   return true;
 };
 
 export const exportProjectsJson = (projects) => {
+  const authorization = authorizeDataOperation(CAPABILITY.IMPORT_EXPORT, 'export dashboard backups');
+  if (!authorization.allowed) {
+    dispatchAuthorizationDenied({ operation: 'exportProjectsJson', ...authorization });
+    return false;
+  }
+
   const timestamp = new Date().toISOString().slice(0, 10);
   downloadTextFile(
     `mlb-dashboard-backup-${timestamp}.json`,
     JSON.stringify(normalizeProjects(projects), null, 2),
     'application/json',
   );
+  return true;
 };
 
 export const importProjectsJson = async (file) => {
+  const authorization = authorizeDataOperation(CAPABILITY.IMPORT_EXPORT, 'import dashboard backups');
+  if (!authorization.allowed) {
+    dispatchAuthorizationDenied({ operation: 'importProjectsJson', ...authorization });
+    throw new Error(authorization.message);
+  }
+
   const text = await file.text();
   const parsed = JSON.parse(text);
   if (!Array.isArray(parsed)) {
@@ -72,7 +103,7 @@ export const importProjectsJson = async (file) => {
   return normalized;
 };
 
-// The nested project cache remains a compatibility layer for the large legacy
-// dashboard component. Phase 5 blocks user-initiated cache writes for roles that
-// cannot safely persist the complete legacy dataset. Authorized remote hydration
-// may use saveProjects(projects, { force: true }) to refresh the read-only cache.
+// localStorage remains an immediate compatibility cache. Runtime authorization
+// prevents read-only or narrowly scoped roles from persisting unauthorized
+// changes before shared-backend synchronization. Remote hydration may bypass the
+// guard with saveProjects(projects, { force: true }).
