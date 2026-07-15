@@ -22,9 +22,9 @@ jobs:
     env:
       VITE_DATA_PROVIDER: local
       VITE_AUTH_MODE: local
-      LOCAL_OWNER_EMAIL: phase5-owner@example.invalid
-      LOCAL_OWNER_PASSWORD: phase5-ci-password-2026-only
-      LOCAL_OWNER_NAME: Phase 5 CI Owner
+      LOCAL_OWNER_EMAIL: phase6-owner@example.invalid
+      LOCAL_OWNER_PASSWORD: phase6-ci-password-2026-only
+      LOCAL_OWNER_NAME: Phase 6 CI Owner
 
     steps:
       - name: Checkout
@@ -44,6 +44,9 @@ jobs:
 
       - name: Validate environment configuration
         run: npm run backend:check
+
+      - name: Verify Phase 6 manual entry domain
+        run: npm run phase6:verify
 
       - name: Build application
         run: npm run build
