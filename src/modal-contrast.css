@@ -1,0 +1,33 @@
+/*
+ * Modal contrast correction
+ *
+ * The Phase 1 readability rules intentionally force white text on true dark
+ * surfaces. Modal backdrops use translucent Tailwind classes such as
+ * bg-slate-950/60, which also matched those broad selectors and caused text
+ * inside the white popup panel to become white. Restore the underlying
+ * Tailwind text utilities anywhere a light popup surface sits inside a dark
+ * translucent backdrop.
+ */
+
+#root [class*="bg-slate-900/"] [class*="bg-white"] h1,
+#root [class*="bg-slate-900/"] [class*="bg-white"] h2,
+#root [class*="bg-slate-900/"] [class*="bg-white"] h3,
+#root [class*="bg-slate-900/"] [class*="bg-white"] h4,
+#root [class*="bg-slate-950/"] [class*="bg-white"] h1,
+#root [class*="bg-slate-950/"] [class*="bg-white"] h2,
+#root [class*="bg-slate-950/"] [class*="bg-white"] h3,
+#root [class*="bg-slate-950/"] [class*="bg-white"] h4,
+#root [class*="bg-blue-900/"] [class*="bg-white"] h1,
+#root [class*="bg-blue-900/"] [class*="bg-white"] h2,
+#root [class*="bg-blue-900/"] [class*="bg-white"] h3,
+#root [class*="bg-blue-900/"] [class*="bg-white"] h4 {
+  color: #0f172a !important;
+  color: revert-layer !important;
+}
+
+#root [class*="bg-slate-900/"] [class*="bg-white"] p,
+#root [class*="bg-slate-950/"] [class*="bg-white"] p,
+#root [class*="bg-blue-900/"] [class*="bg-white"] p {
+  color: #334155 !important;
+  color: revert-layer !important;
+}
