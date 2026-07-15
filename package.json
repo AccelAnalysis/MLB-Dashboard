@@ -16,7 +16,8 @@
     "db:push": "supabase db push",
     "db:backup": "bash scripts/backup-database.sh",
     "db:restore": "bash scripts/restore-database.sh",
-    "auth:bootstrap-local": "node scripts/bootstrap-local-owner.mjs"
+    "auth:bootstrap-local": "node scripts/bootstrap-local-owner.mjs",
+    "auth:verify-local": "node scripts/verify-local-auth.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
