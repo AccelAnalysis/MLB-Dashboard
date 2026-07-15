@@ -121,6 +121,9 @@ export const createWorkScope = (input = {}) => ({
   ...createRecordMetadata('workScope', input),
   jobId: cleanText(input.jobId),
   category: cleanText(input.category || input.type),
+  allocatedAmount: input.allocatedAmount === '' || input.allocatedAmount === null || input.allocatedAmount === undefined
+    ? null
+    : asNumber(input.allocatedAmount),
   description: cleanText(input.description),
   productionStage: input.productionStage || PRODUCTION_STAGE.SOLD,
   priority: cleanText(input.priority || 'normal'),

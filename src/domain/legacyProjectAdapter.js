@@ -10,18 +10,32 @@ const asObject = (value) => (value && typeof value === 'object' && !Array.isArra
 export const normalizeLegacyScope = (scope = {}) => ({
   ...asObject(scope),
   measureRequested: scope?.measureRequested || '',
+  allocatedAmount: scope?.allocatedAmount === '' || scope?.allocatedAmount === null || scope?.allocatedAmount === undefined
+    ? ''
+    : Number(scope.allocatedAmount || 0),
   specs: asObject(scope?.specs),
 });
 
-export const normalizeLegacyProject = (project = {}) => ({
-  ...asObject(project),
-  cancellationDate: project?.cancellationDate || '',
-  cancellationReason: project?.cancellationReason || '',
-  changeOrders: Array.isArray(project?.changeOrders) ? project.changeOrders : [],
-  intake: asObject(project?.intake),
-  permits: asObject(project?.permits),
-  scopes: Array.isArray(project?.scopes) ? project.scopes.map(normalizeLegacyScope) : [],
-});
+export const normalizeLegacyProject = (project = {}) => {
+  const changeOrders = Array.isArray(project?.changeOrders) ? project.changeOrders : [];
+  const revisedAmount = Number(project?.originalAmount || 0)
+    + changeOrders.reduce((sum, item) => sum + Number(item?.amount || 0), 0);
+  const defaultAmountCollected = project?.collected ? revisedAmount : Number(project?.deposit || 0);
+
+  return {
+    ...asObject(project),
+    amountCollected: project?.amountCollected === '' || project?.amountCollected === null || project?.amountCollected === undefined
+      ? defaultAmountCollected
+      : Number(project.amountCollected || 0),
+    collectedDate: project?.collectedDate || '',
+    cancellationDate: project?.cancellationDate || '',
+    cancellationReason: project?.cancellationReason || '',
+    changeOrders,
+    intake: asObject(project?.intake),
+    permits: asObject(project?.permits),
+    scopes: Array.isArray(project?.scopes) ? project.scopes.map(normalizeLegacyScope) : [],
+  };
+};
 
 export const normalizeLegacyProjects = (projects) => {
   if (!Array.isArray(projects)) return [];

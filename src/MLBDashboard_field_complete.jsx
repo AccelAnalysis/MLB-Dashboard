@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -25,10 +25,23 @@ import {
   X,
 } from 'lucide-react';
 import { exportProjectsJson, importProjectsJson, loadProjects, resetProjects, saveProjects } from './services/projectStorage';
+import { loadSalesActivity, saveSalesActivity } from './services/salesActivityStorage';
+import { CAPABILITY } from './auth/permissions';
+import { hasRuntimeCapability } from './auth/runtimeAuthorization';
+import {
+  createCategoryIntegritySummary,
+  createCollectionMetrics,
+  createSalesStats as createMetricSalesStats,
+  createSalesVsProductionMetrics,
+} from './utils/projectMetrics';
 import HelpCenterDrawer from './help/HelpCenterDrawer';
 import GuidedWalkthrough from './help/GuidedWalkthrough';
 import HelpIcon from './help/HelpIcon';
 import { HELP_STORAGE_KEY, helpById } from './help/helpContent';
+import MetricCard from './components/layout/MetricCard';
+import MetricDrilldownModal from './components/metrics/MetricDrilldownModal';
+import CustomerWorkspace from './components/production/CustomerWorkspace';
+import { createMetricResult, METRIC_IDS } from './metrics/metricRegistry';
 
 const toISODate = (date) => date.toISOString().split('T')[0];
 const todayISO = () => toISODate(new Date());
@@ -374,11 +387,6 @@ const WHITEBOARD_STATUS_KEY = [
   { label: 'Scheduled', field: 'scheduledInstallDate', className: 'bg-pink-100 text-pink-800 border-pink-300' },
 ];
 
-const salesActivity = {
-  Jack: { leads: 38, opportunities: 28 },
-  Sarah: { leads: 31, opportunities: 24 },
-  Mike: { leads: 27, opportunities: 19 },
-};
 
 const emptyProject = () => ({
   id: `P-${Date.now().toString().slice(-5)}`,
@@ -392,6 +400,8 @@ const emptyProject = () => ({
   paymentType: 'Finance',
   originalAmount: '',
   deposit: '',
+  amountCollected: '',
+  collectedDate: '',
   collected: false,
   thankYouSent: false,
   cancelled: false,
@@ -408,6 +418,7 @@ const emptyProject = () => ({
 const emptyScope = () => ({
   id: `S-${Date.now().toString().slice(-5)}`,
   type: 'Roofs',
+  allocatedAmount: '',
   measurer: '',
   measureRequested: '',
   measureCompleted: '',
@@ -631,22 +642,6 @@ const Badge = ({ children, className = '' }) => (
   <span className={`inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide sm:text-xs ${className}`}>
     {children}
   </span>
-);
-
-const MetricCard = ({ label, value, detail, tone = 'bg-white', helpId, helpIcon, onClick, ariaLabel }) => (
-  <div
-    data-help-id={helpId}
-    role={onClick ? 'button' : undefined}
-    tabIndex={onClick ? 0 : undefined}
-    aria-label={ariaLabel}
-    onClick={onClick}
-    onKeyDown={onClick ? (event) => handleActivationKey(event, onClick) : undefined}
-    className={`${tone} rounded-lg border border-slate-200 p-5 shadow-sm ${onClick ? 'cursor-pointer transition-colors hover:border-blue-300 hover:bg-blue-50/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2' : ''}`}
-  >
-    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-    <h3 className="mt-2 text-3xl font-bold text-slate-950">{value}{helpIcon}</h3>
-    {detail && <p className="mt-1 text-sm text-slate-500">{detail}</p>}
-  </div>
 );
 
 const WhiteboardStatusKey = ({ dark = false, helpId }) => (
@@ -1012,7 +1007,15 @@ const ProjectModal = ({
 
               <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex flex-wrap gap-3" data-help-id="modal-collected-funded">
-                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700"><input type="checkbox" checked={formData.collected} onChange={(event) => updateField('collected', event.target.checked)} /> Collected / Funded<Help id="modal-collected-funded" /></label>
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700"><input type="checkbox" checked={formData.collected} onChange={(event) => setFormData((prev) => {
+                    const collected = event.target.checked;
+                    return {
+                      ...prev,
+                      collected,
+                      collectedDate: collected ? (prev.collectedDate || todayISO()) : '',
+                      amountCollected: collected ? Math.max(Number(prev.amountCollected || 0), getRevisedAmount(prev)) : Number(prev.amountCollected || 0),
+                    };
+                  })} /> Collected / Funded<Help id="modal-collected-funded" /></label>
                   <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700"><input type="checkbox" checked={formData.thankYouSent} onChange={(event) => updateField('thankYouSent', event.target.checked)} /> Thank-you sent</label>
                   <label className="flex items-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-700">
                     <input
@@ -1026,6 +1029,16 @@ const ProjectModal = ({
                     /> Cancelled
                   </label>
                 </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Total Paid / Funded<input type="number" min="0" step="0.01" value={formData.amountCollected ?? ''} onChange={(event) => setFormData((prev) => {
+                    const amountCollected = event.target.value;
+                    const paidInFull = Number(amountCollected || 0) >= getRevisedAmount(prev) && getRevisedAmount(prev) > 0;
+                    return { ...prev, amountCollected, collected: paidInFull ? true : prev.collected };
+                  })} className="mt-1 w-full rounded-md border border-slate-300 p-2 text-sm text-slate-900" /></label>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Collected / Funded Date<input type="date" value={formData.collectedDate || ''} onChange={(event) => updateField('collectedDate', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 p-2 text-sm text-slate-900" /></label>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Remaining Balance</p><p className="mt-1 text-lg font-black text-slate-900">{currency(Math.max(0, getRevisedAmount(formData) - Number(formData.amountCollected || 0)))}</p></div>
+                </div>
+                {formData.collected && !formData.collectedDate && <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800">A collected/funded date is required for completion-to-payment reporting.</p>}
                 {formData.cancelled && (
                   <div className="grid grid-cols-1 gap-4 rounded-lg border border-red-200 bg-red-50 p-4 sm:grid-cols-2" data-help-id="modal-cancellation-fields">
                     <label className="block text-xs font-bold uppercase tracking-wide text-red-700">Cancellation Date<input type="date" value={formData.cancellationDate || ''} onChange={(event) => updateField('cancellationDate', event.target.value)} className="mt-1 w-full rounded-md border border-red-200 p-2 text-sm text-slate-900" /></label>
@@ -1055,6 +1068,7 @@ const ProjectModal = ({
             <div className="space-y-6 overflow-y-auto p-6">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <label className="block text-xs font-bold uppercase text-slate-500">Product Category<select value={editingScope.type} onChange={(event) => setEditingScope({ ...editingScope, type: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-sm">{PRODUCT_CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></label>
+                <label className="block text-xs font-bold uppercase text-slate-500">Scope Revenue Allocation<input type="number" min="0" step="0.01" value={editingScope.allocatedAmount ?? ''} onChange={(event) => setEditingScope({ ...editingScope, allocatedAmount: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-sm" /><span className="mt-1 block text-[10px] font-medium normal-case text-slate-400">Required only to report revenue by category on multi-scope projects.</span></label>
                 <label className="block text-xs font-bold uppercase text-slate-500">Assigned Crew / Sub<input type="text" value={editingScope.crew || ''} onChange={(event) => setEditingScope({ ...editingScope, crew: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-sm" /></label>
               </div>
 
@@ -1120,7 +1134,14 @@ const ProjectModal = ({
 
 export default function MLBDashboard() {
   const fileInputRef = useRef(null);
+  const metricTriggerRef = useRef(null);
   const [projects, setProjects] = useState(() => loadProjects(initialProjects));
+  const [salesActivityRecords, setSalesActivityRecords] = useState(() => loadSalesActivity());
+  const [salesActivityDraft, setSalesActivityDraft] = useState(() => ({ activityDate: todayISO(), salesperson: '', region: 'Virginia', leadSource: '', category: 'All', leads: '', opportunities: '' }));
+  const [salesCategoryFilter, setSalesCategoryFilter] = useState('All');
+  const [salespersonFilter, setSalespersonFilter] = useState('All');
+  const [salesLeadSourceFilter, setSalesLeadSourceFilter] = useState('All');
+  const canManageSalesActivity = hasRuntimeCapability(CAPABILITY.MANAGE_SALES_DATA);
   const [initialNavigation] = useState(() => getInitialNavigation());
   const [mainArea, setMainArea] = useState(initialNavigation.mainArea);
   const [productionMode, setProductionMode] = useState(initialNavigation.productionMode);
@@ -1195,6 +1216,7 @@ export default function MLBDashboard() {
   });
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [projectModalState, setProjectModalState] = useState(null);
+  const [activeMetricId, setActiveMetricId] = useState(null);
   const [expandedProjects, setExpandedProjects] = useState(() => new Set(['P-1001']));
   const [bookSort, setBookSort] = useState(DEFAULT_BOOK_SORT);
   const [bookColumnFilters, setBookColumnFilters] = useState(DEFAULT_BOOK_COLUMN_FILTERS);
@@ -1397,35 +1419,88 @@ export default function MLBDashboard() {
     };
   }, [filteredProjects, flatScopes, allAlerts]);
 
-  const salesStats = useMemo(() => {
-    const stats = {};
+  const categoryFilteredProjects = useMemo(() => filteredProjects.filter((project) => (
+    (salesCategoryFilter === 'All' || project.scopes.some((scope) => scope.type === salesCategoryFilter))
+    && (salespersonFilter === 'All' || project.salesperson === salespersonFilter)
+    && (salesLeadSourceFilter === 'All' || project.leadSource === salesLeadSourceFilter)
+  )), [filteredProjects, salesCategoryFilter, salespersonFilter, salesLeadSourceFilter]);
 
-    filteredProjects.forEach((project) => {
-      const name = project.salesperson || 'Unassigned';
-      if (!stats[name]) {
-        const activity = salesActivity[name] || { leads: 0, opportunities: 0 };
-        stats[name] = { name, revenue: 0, deposits: 0, projects: 0, cancelled: 0, scopes: 0, leads: activity.leads, opportunities: activity.opportunities };
-      }
-      if (project.cancelled) {
-        stats[name].cancelled += 1;
-        return;
-      }
-      stats[name].revenue += getRevisedAmount(project);
-      stats[name].deposits += Number(project.deposit || 0);
-      stats[name].projects += 1;
-      stats[name].scopes += project.scopes.length;
-    });
+  const filteredSalesActivity = useMemo(() => salesActivityRecords.filter((activity) => {
+    const regionMatch = regionFilter === 'All' || activity.region === regionFilter;
+    const periodMatch = isInPeriod(activity.activityDate, periodFilter, customPeriodStart, customPeriodEnd);
+    const categoryMatch = salesCategoryFilter === 'All' || activity.category === salesCategoryFilter;
+    const salespersonMatch = salespersonFilter === 'All' || activity.salesperson === salespersonFilter;
+    const leadSourceMatch = salesLeadSourceFilter === 'All' || activity.leadSource === salesLeadSourceFilter;
+    return regionMatch && periodMatch && categoryMatch && salespersonMatch && leadSourceMatch;
+  }), [salesActivityRecords, regionFilter, periodFilter, customPeriodStart, customPeriodEnd, salesCategoryFilter, salespersonFilter, salesLeadSourceFilter]);
 
-    return Object.values(stats)
-      .map((rep) => ({
-        ...rep,
-        avgTicket: rep.projects ? Math.round(rep.revenue / rep.projects) : 0,
-        valuePerLead: rep.leads ? Math.round(rep.revenue / rep.leads) : 0,
-        closingRate: rep.leads ? rep.projects / rep.leads : 0,
-        cancellationRate: rep.projects + rep.cancelled ? rep.cancelled / (rep.projects + rep.cancelled) : 0,
-      }))
-      .sort((a, b) => b.revenue - a.revenue);
-  }, [filteredProjects]);
+  const salesFilterOptions = useMemo(() => ({
+    salespeople: [...new Set([...projects.map((project) => project.salesperson), ...salesActivityRecords.map((record) => record.salesperson)].filter(Boolean))].sort(),
+    leadSources: [...new Set([...projects.map((project) => project.leadSource), ...salesActivityRecords.map((record) => record.leadSource)].filter(Boolean))].sort(),
+  }), [projects, salesActivityRecords]);
+
+  const salesStats = useMemo(
+    () => createMetricSalesStats(categoryFilteredProjects, filteredSalesActivity, { category: salesCategoryFilter }),
+    [categoryFilteredProjects, filteredSalesActivity, salesCategoryFilter],
+  );
+
+  const metricPeriodMatch = (date) => isInPeriod(date, periodFilter, customPeriodStart, customPeriodEnd);
+  const salesVsProduction = useMemo(() => createSalesVsProductionMetrics(projects, {
+    region: regionFilter,
+    category: salesCategoryFilter,
+    salesperson: salespersonFilter,
+    leadSource: salesLeadSourceFilter,
+    matchesPeriod: metricPeriodMatch,
+  }), [projects, regionFilter, salesCategoryFilter, salespersonFilter, salesLeadSourceFilter, periodFilter, customPeriodStart, customPeriodEnd]);
+  const collectionMetrics = useMemo(() => createCollectionMetrics(projects, {
+    region: regionFilter,
+    category: salesCategoryFilter,
+    salesperson: salespersonFilter,
+    leadSource: salesLeadSourceFilter,
+    matchesPeriod: metricPeriodMatch,
+  }), [projects, regionFilter, salesCategoryFilter, salespersonFilter, salesLeadSourceFilter, periodFilter, customPeriodStart, customPeriodEnd]);
+  const categoryIntegrity = useMemo(
+    () => createCategoryIntegritySummary(categoryFilteredProjects, salesCategoryFilter),
+    [categoryFilteredProjects, salesCategoryFilter],
+  );
+  const workspaceMetricFilters = useMemo(() => ({
+    period: periodFilter,
+    customStart: customPeriodStart,
+    customEnd: customPeriodEnd,
+    region: regionFilter,
+    productCategory: salesCategoryFilter,
+    salesperson: salespersonFilter,
+    leadSource: salesLeadSourceFilter,
+    paymentType: 'All',
+    status: 'All',
+  }), [periodFilter, customPeriodStart, customPeriodEnd, regionFilter, salesCategoryFilter, salespersonFilter, salesLeadSourceFilter]);
+  const buildMetric = useCallback((id, filters) => createMetricResult({ id, projects, salesActivity: salesActivityRecords, filters }), [projects, salesActivityRecords]);
+  const openMetricDrilldown = (id, trigger) => {
+    metricTriggerRef.current = trigger || document.activeElement;
+    setActiveMetricId(id);
+  };
+
+  const addSalesActivity = () => {
+    if (!salesActivityDraft.salesperson.trim() || Number(salesActivityDraft.leads || 0) < 0) return;
+    const record = {
+      ...salesActivityDraft,
+      id: 'SA-' + Date.now(),
+      salesperson: salesActivityDraft.salesperson.trim(),
+      leads: Number(salesActivityDraft.leads || 0),
+      opportunities: Number(salesActivityDraft.opportunities || 0),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const next = [record, ...salesActivityRecords];
+    if (saveSalesActivity(next)) {
+      setSalesActivityRecords(next);
+      setSalesActivityDraft((current) => ({ ...current, salesperson: '', leadSource: '', leads: '', opportunities: '' }));
+    }
+  };
+  const deleteSalesActivity = (recordId) => {
+    const next = salesActivityRecords.filter((record) => record.id !== recordId);
+    if (saveSalesActivity(next)) setSalesActivityRecords(next);
+  };
 
   const wallboardColumns = useMemo(() => {
     const columns = WALLBOARD_COLUMNS.reduce((acc, column) => ({ ...acc, [column]: [] }), {});
@@ -1777,6 +1852,9 @@ export default function MLBDashboard() {
       'Scheduled Install',
       'Crew/Sub',
       'Completion Date',
+      'Scope Revenue Allocation',
+      'Amount Paid/Funded',
+      'Collected/Funded Date',
       'Collected/Funded',
       'Thank-you Sent',
       'Cancelled',
@@ -1816,6 +1894,9 @@ export default function MLBDashboard() {
         scope?.scheduledInstallDate || '',
         scope?.crew || '',
         scope?.completionDate || '',
+        scope?.allocatedAmount ?? '',
+        project.amountCollected ?? '',
+        project.collectedDate || '',
         project.collected ? 'Yes' : 'No',
         project.thankYouSent ? 'Yes' : 'No',
         project.cancelled ? 'Yes' : 'No',
@@ -1844,7 +1925,7 @@ export default function MLBDashboard() {
   };
 
   const ExecutiveSummary = () => (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5" data-help-id="customer-view-summary">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6" data-help-id="customer-view-summary">
       <MetricCard
         label="Active Pipeline"
         value={currency(pipelineMetrics.totalRevenue)}
@@ -1857,101 +1938,15 @@ export default function MLBDashboard() {
       />
       <MetricCard label="Deposits Held" value={currency(pipelineMetrics.totalDeposits)} detail="Cash collected at sale" />
       <MetricCard
-        label="Open Alerts"
-        value={pipelineMetrics.alertCount}
+        metric={buildMetric(METRIC_IDS.OPEN_BOTTLENECKS, workspaceMetricFilters)}
         detail="Production bottlenecks"
         tone={pipelineMetrics.alertCount ? 'bg-red-50' : 'bg-green-50'}
-        ariaLabel="Open Bottlenecks view"
-        onClick={() => {
-          setMainArea(MAIN_AREAS.BOTTLENECKS);
-          setBottleneckMode(BOTTLENECK_MODES.ALL);
-        }}
+        ariaLabel="Open alerts metric drilldown"
+        onClick={(trigger) => openMetricDrilldown(METRIC_IDS.OPEN_BOTTLENECKS, trigger)}
       />
       <MetricCard label="Scheduled Scopes" value={pipelineMetrics.scheduledCount} detail="Not yet completed" />
       <MetricCard label="Avg Sold to Done" value={`${pipelineMetrics.avgSoldToDone || '-'}d`} detail="Completed scopes only" />
-    </div>
-  );
-
-  const ProjectCenterView = () => (
-    <div className="space-y-4">
-      {filteredProjects.map((project) => {
-        const isExpanded = expandedProjects.has(project.id);
-        const alerts = getProjectAlerts(project);
-
-        return (
-          <div key={project.id} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-all" data-help-id="customer-project-card">
-            <div onClick={() => toggleExpand(project.id)} className="flex cursor-pointer flex-col justify-between gap-4 p-4 transition-colors hover:bg-slate-50 md:flex-row md:items-center">
-              <div className="flex items-center gap-4">
-                <div className={`rounded-lg p-2 ${isExpanded ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
-                  {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                </div>
-                <div>
-                  <h3 className="text-lg font-black text-slate-900">{project.customer}</h3>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-3 text-sm font-medium text-slate-500">
-                    <span className="flex items-center"><MapPin size={14} className="mr-1" /> {project.city}</span>
-                    <span>{project.scopes.length} scopes</span>
-                    <span>{project.salesperson || 'Unassigned'}</span>
-                    {project.cancelled && <Badge className="border-red-200 bg-red-50 text-red-700">Cancelled</Badge>}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-4 md:ml-auto md:justify-end">
-                {alerts.length > 0 && <Badge className="border-amber-200 bg-amber-50 text-amber-700" data-help-id="customer-alert-badge">{alerts.length} attention</Badge>}
-                <div className="text-left sm:text-right" data-help-id="customer-current-total">
-                  <div className="text-xs font-bold uppercase text-slate-400">Current Total</div>
-                  <div className="font-black text-slate-800">{currency(getRevisedAmount(project))}</div>
-                </div>
-                <div className="text-left sm:text-right">
-                  <div className="text-xs font-bold uppercase text-slate-400">Active Since</div>
-                  <div className="font-bold text-slate-700">{formatDate(project.dateSold)}</div>
-                </div>
-                <button type="button" onClick={(event) => { event.stopPropagation(); openProjectFile(project, { initialTab: 'overview' }); }} data-help-id="customer-open-file" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
-                  Open File
-                </button>
-                <Help id="customer-open-file" />
-              </div>
-            </div>
-
-            {isExpanded && (
-              <div className="border-t border-slate-100 bg-slate-50 p-4 md:pl-16">
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  {project.scopes.map((scope) => {
-                    const status = getScopeStatus(scope);
-                    return (
-                      <div
-                        key={scope.id}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`Open ${project.customer} ${scope.type} scope`}
-                        onClick={() => openScopeFile(project, scope)}
-                        onKeyDown={(event) => handleActivationKey(event, () => openScopeFile(project, scope))}
-                        className="cursor-pointer rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                        data-help-id="customer-scope-card"
-                      >
-                        <div className="mb-3 flex items-start justify-between gap-3">
-                          <h4 className="font-bold text-slate-800">{scope.type}</h4>
-                          <Badge className={status.color}>{status.label}</Badge>
-                        </div>
-                        <p className="mb-1 text-xs font-bold uppercase text-slate-500">Next Action</p>
-                        <p className="text-sm font-bold text-blue-700">{calculateNextAction(scope, project)}</p>
-                        <div className="mt-3 flex flex-wrap gap-1">
-                          {getWhiteboardDateBadges(scope).map((badge) => <Badge key={badge.label} className={badge.className}>{badge.label}: {formatDate(badge.value)}</Badge>)}
-                        </div>
-                        <div className="mt-3 flex justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
-                          <span>Sub: {scope.crew || 'TBD'}</span>
-                          <span>ETA: {formatDate(scope.materialETA)}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {project.scopes.length === 0 && <p className="p-2 text-sm italic text-slate-500">No work scopes defined for this project.</p>}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
+      <MetricCard metric={buildMetric(METRIC_IDS.COMPLETION_TO_PAYMENT, workspaceMetricFilters)} detail={`${collectionMetrics.openProjects} completed awaiting payment`} tone={collectionMetrics.openProjects ? 'bg-amber-50' : 'bg-white'} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.COMPLETION_TO_PAYMENT, trigger)} />
     </div>
   );
 
@@ -2049,52 +2044,89 @@ export default function MLBDashboard() {
     </div>
   );
 
+
   const SalesView = () => {
     const totalRevenue = salesStats.reduce((sum, rep) => sum + rep.revenue, 0);
     const totalLeads = salesStats.reduce((sum, rep) => sum + rep.leads, 0);
     const totalProjects = salesStats.reduce((sum, rep) => sum + rep.projects, 0);
     const totalCancelled = salesStats.reduce((sum, rep) => sum + rep.cancelled, 0);
+    const unresolvedRevenue = salesStats.reduce((sum, rep) => sum + rep.unallocatedProjects, 0);
+    const drilldownMetric = (id) => buildMetric(id, workspaceMetricFilters);
 
     return (
       <div className="space-y-6">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-5" data-help-id="sales-summary-metrics">
-          <MetricCard label="Sales Revenue" value={currency(totalRevenue)} detail={`${periodLabel} sold projects`} helpId="sales-revenue" helpIcon={<Help id="sales-revenue" />} />
-          <MetricCard label="Projects Sold" value={totalProjects} detail="Filtered by region/period" helpId="sales-projects-sold" helpIcon={<Help id="sales-projects-sold" />} />
-          <MetricCard label="Leads Given" value={totalLeads} detail="Demo lead input" helpId="sales-leads-given" helpIcon={<Help id="sales-leads-given" />} />
-          <MetricCard label="Close Rate" value={totalLeads ? `${Math.round((totalProjects / totalLeads) * 100)}%` : '-'} detail="Projects divided by leads" helpId="sales-close-rate" helpIcon={<Help id="sales-close-rate" />} />
-          <MetricCard label="Cancel Rate" value={totalProjects + totalCancelled ? `${Math.round((totalCancelled / (totalProjects + totalCancelled)) * 100)}%` : '-'} detail={`${totalCancelled} cancelled`} tone={totalCancelled ? 'bg-red-50' : 'bg-white'} helpId="sales-cancel-rate" helpIcon={<Help id="sales-cancel-rate" />} />
+        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+            <div>
+              <h2 className="text-xl font-black text-slate-900">Sales and Production Capacity</h2>
+              <p className="mt-1 text-sm text-slate-500">Revenue comes only from saved Project Files. Lead activity records volumes for prospects that never become projects.</p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <label className="text-xs font-black uppercase tracking-wide text-slate-600">Product Category<select value={salesCategoryFilter} onChange={(event) => setSalesCategoryFilter(event.target.value)} className="mt-1 block min-w-44 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold normal-case text-slate-800"><option>All</option>{PRODUCT_CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></label>
+              <label className="text-xs font-black uppercase tracking-wide text-slate-600">Salesperson<select value={salespersonFilter} onChange={(event) => setSalespersonFilter(event.target.value)} className="mt-1 block min-w-44 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold normal-case text-slate-800"><option>All</option>{salesFilterOptions.salespeople.map((value) => <option key={value}>{value}</option>)}</select></label>
+              <label className="text-xs font-black uppercase tracking-wide text-slate-600">Lead Source<select value={salesLeadSourceFilter} onChange={(event) => setSalesLeadSourceFilter(event.target.value)} className="mt-1 block min-w-44 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold normal-case text-slate-800"><option>All</option>{salesFilterOptions.leadSources.map((value) => <option key={value}>{value}</option>)}</select></label>
+            </div>
+          </div>
+          {unresolvedRevenue > 0 && <p className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">{unresolvedRevenue} multi-scope project{unresolvedRevenue === 1 ? '' : 's'} match this category but are excluded from category revenue until scope allocations equal the revised project total.</p>}
+        </section>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-9" data-help-id="sales-summary-metrics">
+          <MetricCard metric={drilldownMetric(METRIC_IDS.SALES_REVENUE)} detail={`${periodLabel} recognized sold value`} helpId="sales-revenue" helpIcon={<Help id="sales-revenue" />} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.SALES_REVENUE, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.PROJECTS_SOLD)} detail="Sold-date period" helpId="sales-projects-sold" helpIcon={<Help id="sales-projects-sold" />} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.PROJECTS_SOLD, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.LEADS_GIVEN)} detail="Saved lead activity" helpId="sales-leads-given" helpIcon={<Help id="sales-leads-given" />} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.LEADS_GIVEN, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.CLOSE_RATE)} detail="Projects divided by leads" helpId="sales-close-rate" helpIcon={<Help id="sales-close-rate" />} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.CLOSE_RATE, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.CANCEL_RATE)} detail={`${totalCancelled} cancelled`} tone={totalCancelled ? 'bg-red-50' : 'bg-white'} helpId="sales-cancel-rate" helpIcon={<Help id="sales-cancel-rate" />} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.CANCEL_RATE, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.AVERAGE_CONTRACT)} detail="Recognized revenue per sold project" onClick={(trigger) => openMetricDrilldown(METRIC_IDS.AVERAGE_CONTRACT, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.VALUE_PER_LEAD)} detail="Recognized revenue per saved lead" onClick={(trigger) => openMetricDrilldown(METRIC_IDS.VALUE_PER_LEAD, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.COMPLETED_VALUE)} label="Production Completed" detail={`${salesVsProduction.completedProjects} completion-date projects`} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.COMPLETED_VALUE, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.COMPLETION_TO_PAYMENT)} detail={`${collectionMetrics.openProjects} awaiting payment`} tone={collectionMetrics.openProjects ? 'bg-amber-50' : 'bg-white'} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.COMPLETION_TO_PAYMENT, trigger)} />
         </div>
+
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+          <MetricCard metric={drilldownMetric(METRIC_IDS.BOOKED_VALUE)} detail={`${salesVsProduction.soldProjects} sold projects`} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.BOOKED_VALUE, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.COMPLETED_VALUE)} detail={`${salesVsProduction.completedProjects} completed projects`} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.COMPLETED_VALUE, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.PRODUCTION_TO_SALES)} detail="Completed value divided by booked value" tone={salesVsProduction.productionToSalesRatio < 0.8 && salesVsProduction.soldValue ? 'bg-amber-50' : 'bg-white'} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.PRODUCTION_TO_SALES, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.BACKLOG_MOVEMENT)} detail={salesVsProduction.backlogMovement >= 0 ? 'Sales added more than production completed' : 'Production reduced backlog'} tone={salesVsProduction.backlogMovement > 0 ? 'bg-amber-50' : 'bg-green-50'} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.BACKLOG_MOVEMENT, trigger)} />
+        </section>
+
+        <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
+            <h3 className="font-bold text-slate-800">Lead Activity Input</h3>
+            <p className="mt-1 text-sm text-slate-500">This records lead counts only. Customer, contract, revenue, and production data remain exclusively in New Project → Open File.</p>
+          </div>
+          {canManageSalesActivity && (
+            <div className="grid grid-cols-1 gap-3 border-b border-slate-200 p-5 md:grid-cols-4 xl:grid-cols-8">
+              <label className="text-xs font-bold uppercase text-slate-500">Date<input type="date" value={salesActivityDraft.activityDate} onChange={(event) => setSalesActivityDraft({ ...salesActivityDraft, activityDate: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-sm text-slate-900" /></label>
+              <label className="text-xs font-bold uppercase text-slate-500">Salesperson<input value={salesActivityDraft.salesperson} onChange={(event) => setSalesActivityDraft({ ...salesActivityDraft, salesperson: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-sm text-slate-900" /></label>
+              <label className="text-xs font-bold uppercase text-slate-500">Region<select value={salesActivityDraft.region} onChange={(event) => setSalesActivityDraft({ ...salesActivityDraft, region: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-sm text-slate-900"><option>Virginia</option><option>Carolina</option></select></label>
+              <label className="text-xs font-bold uppercase text-slate-500">Lead Source<input value={salesActivityDraft.leadSource} onChange={(event) => setSalesActivityDraft({ ...salesActivityDraft, leadSource: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-sm text-slate-900" /></label>
+              <label className="text-xs font-bold uppercase text-slate-500">Category<select value={salesActivityDraft.category} onChange={(event) => setSalesActivityDraft({ ...salesActivityDraft, category: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-sm text-slate-900"><option>All</option>{PRODUCT_CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></label>
+              <label className="text-xs font-bold uppercase text-slate-500">Leads<input type="number" min="0" value={salesActivityDraft.leads} onChange={(event) => setSalesActivityDraft({ ...salesActivityDraft, leads: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-sm text-slate-900" /></label>
+              <label className="text-xs font-bold uppercase text-slate-500">Opportunities<input type="number" min="0" value={salesActivityDraft.opportunities} onChange={(event) => setSalesActivityDraft({ ...salesActivityDraft, opportunities: event.target.value })} className="mt-1 w-full rounded border border-slate-300 p-2 text-sm text-slate-900" /></label>
+              <button type="button" onClick={addSalesActivity} className="self-end rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-black text-white hover:bg-blue-700">Add Activity</button>
+            </div>
+          )}
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50"><tr>{['Date', 'Salesperson', 'Region', 'Source', 'Category', 'Leads', 'Opportunities', ''].map((heading) => <th key={heading} className="px-4 py-3 text-left text-xs font-bold uppercase text-slate-500">{heading}</th>)}</tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredSalesActivity.map((record) => <tr key={record.id}><td className="px-4 py-3">{formatDate(record.activityDate)}</td><td className="px-4 py-3 font-bold">{record.salesperson}</td><td className="px-4 py-3">{record.region}</td><td className="px-4 py-3">{record.leadSource || '-'}</td><td className="px-4 py-3">{record.category}</td><td className="px-4 py-3 font-bold">{record.leads}</td><td className="px-4 py-3">{record.opportunities}</td><td className="px-4 py-3 text-right">{canManageSalesActivity && <button type="button" onClick={() => deleteSalesActivity(record.id)} className="text-xs font-bold text-red-600 hover:underline">Delete</button>}</td></tr>)}
+                {filteredSalesActivity.length === 0 && <tr><td colSpan="8" className="px-4 py-8 text-center italic text-slate-400">No saved lead activity for the selected filters.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm" data-help-id="salesperson-performance-table">
           <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
             <h3 className="font-bold text-slate-800">Salesperson Performance<Help id="salesperson-performance-table" /></h3>
-            <p className="mt-1 text-sm text-slate-500">Tracks revised project revenue, average contract, close rate, value per lead, and cancellations.</p>
+            <p className="mt-1 text-sm text-slate-500">Tracks revised project revenue, average contract, real lead activity, close rate, value per lead, and cancellations.</p>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200">
-              <thead className="bg-slate-50">
-                <tr>
-                  {['Salesperson', 'Projects', 'Cancelled', 'Scopes', 'Revenue', 'Deposits', 'Avg Contract', 'Leads', 'Close Rate', 'Value / Lead', 'Cancel Rate'].map((heading) => (
-                    <th key={heading} className="whitespace-nowrap px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">{heading}</th>
-                  ))}
-                </tr>
-              </thead>
+              <thead className="bg-slate-50"><tr>{['Salesperson', 'Projects', 'Cancelled', 'Scopes', 'Revenue', 'Deposits', 'Avg Contract', 'Leads', 'Close Rate', 'Value / Lead', 'Cancel Rate'].map((heading) => <th key={heading} className="whitespace-nowrap px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">{heading}</th>)}</tr></thead>
               <tbody className="divide-y divide-slate-200 bg-white">
-                {salesStats.map((rep) => (
-                  <tr key={rep.name} className="hover:bg-slate-50">
-                    <td className="whitespace-nowrap px-6 py-4 font-semibold text-slate-900">{rep.name}</td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{rep.projects}</td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{rep.cancelled}</td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{rep.scopes}</td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900">{currency(rep.revenue)}</td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{currency(rep.deposits)}</td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{currency(rep.avgTicket)}</td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{rep.leads}</td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{Math.round(rep.closingRate * 100)}%</td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700" data-help-id="sales-value-per-lead">{currency(rep.valuePerLead)}<Help id="sales-value-per-lead" /></td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{Math.round(rep.cancellationRate * 100)}%</td>
-                  </tr>
-                ))}
+                {salesStats.map((rep) => <tr key={rep.name} className="hover:bg-slate-50"><td className="whitespace-nowrap px-6 py-4 font-semibold text-slate-900">{rep.name}</td><td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{rep.projects}</td><td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{rep.cancelled}</td><td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{rep.scopes}</td><td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900">{currency(rep.revenue)}</td><td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{currency(rep.deposits)}</td><td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{currency(rep.avgTicket)}</td><td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{rep.leads}</td><td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{rep.leads ? `${Math.round(rep.closingRate * 100)}%` : '-'}</td><td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700" data-help-id="sales-value-per-lead">{rep.leads ? currency(rep.valuePerLead) : '-'}<Help id="sales-value-per-lead" /></td><td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">{Math.round(rep.cancellationRate * 100)}%</td></tr>)}
               </tbody>
             </table>
           </div>
@@ -2659,8 +2691,10 @@ export default function MLBDashboard() {
               <div className="rounded-lg bg-blue-950 p-4"><p className="text-xs font-black uppercase text-blue-300">Revenue</p><p className="text-3xl font-black text-white">{currency(wallboardSalesTotals.totalRevenue)}</p></div>
               <div className="rounded-lg bg-slate-950 p-4"><p className="text-xs font-black uppercase text-slate-400">Projects Sold</p><p className="text-3xl font-black text-white">{wallboardSalesTotals.totalProjects}</p></div>
               <div className="rounded-lg bg-slate-950 p-4"><p className="text-xs font-black uppercase text-slate-400">Leads Given</p><p className="text-3xl font-black text-white">{wallboardSalesTotals.totalLeads}</p></div>
-              <div className="rounded-lg bg-green-950 p-4"><p className="text-xs font-black uppercase text-green-300">Close Rate</p><p className="text-3xl font-black text-white">{wallboardSalesTotals.closeRate}%</p></div>
+              <div className="rounded-lg bg-green-950 p-4"><p className="text-xs font-black uppercase text-green-300">Close Rate</p><p className="text-3xl font-black text-white">{wallboardSalesTotals.totalLeads ? `${wallboardSalesTotals.closeRate}%` : '-'}</p></div>
               <div className="rounded-lg bg-red-950 p-4"><p className="text-xs font-black uppercase text-red-300">Cancel Rate</p><p className="text-3xl font-black text-white">{wallboardSalesTotals.cancellationRate}%</p></div>
+              <div className="rounded-lg bg-slate-950 p-4"><p className="text-xs font-black uppercase text-slate-400">Production Completed</p><p className="text-2xl font-black text-white">{currency(salesVsProduction.completedValue)}</p></div>
+              <div className="rounded-lg bg-amber-950 p-4"><p className="text-xs font-black uppercase text-amber-300">Backlog Movement</p><p className="text-2xl font-black text-white">{currency(salesVsProduction.backlogMovement)}</p></div>
             </div>
             <div className="mt-4 rounded-lg border border-slate-700 bg-slate-950 p-4">
               <p className="text-xs font-black uppercase tracking-wide text-slate-400">Top salesperson by revenue</p>
@@ -2800,10 +2834,6 @@ export default function MLBDashboard() {
               )}
             </div>
             <Help id="global-admin-menu" />
-            <button data-help-id="global-new-project" type="button" onClick={() => openProjectFile(emptyProject(), { initialTab: 'overview' })} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
-              <Plus size={16} className="mr-2 inline" /> New Project
-            </button>
-            <Help id="global-new-project" />
           </div>
         </div>
 
@@ -2863,7 +2893,19 @@ export default function MLBDashboard() {
 
       <main className={`${currentView === VIEWS.WALLBOARD ? 'mx-auto max-w-[1920px] px-3 py-3' : 'mx-auto w-full max-w-[1920px] space-y-6 px-4 py-6'}`}>
         {currentView !== VIEWS.CRITICAL && currentView !== VIEWS.WALLBOARD && currentView !== VIEWS.BOOK && <ExecutiveSummary />}
-        {currentView === VIEWS.CENTER && <ProjectCenterView />}
+        {currentView === VIEWS.CENTER && (
+          <CustomerWorkspace
+            projects={filteredProjects}
+            expandedProjects={expandedProjects}
+            toggleExpand={toggleExpand}
+            openProjectFile={openProjectFile}
+            openScopeFile={openScopeFile}
+            onNewProject={() => openProjectFile(emptyProject(), { initialTab: 'overview' })}
+            formatDate={formatDate}
+            currency={currency}
+            getWhiteboardDateBadges={getWhiteboardDateBadges}
+          />
+        )}
         {currentView === VIEWS.MEASURE && <MeasurementQueueView />}
         {currentView === VIEWS.BOTTLENECKS && <BottlenecksView />}
         {currentView === VIEWS.SALES && <SalesView />}
@@ -2871,6 +2913,23 @@ export default function MLBDashboard() {
         {currentView === VIEWS.BOOK && <CriticalPathBookView />}
         {currentView === VIEWS.WALLBOARD && <TVWallboardView />}
       </main>
+
+      {activeMetricId && (
+        <MetricDrilldownModal
+          metricId={activeMetricId}
+          workspaceFilters={workspaceMetricFilters}
+          buildMetric={buildMetric}
+          onClose={() => setActiveMetricId(null)}
+          returnFocusRef={metricTriggerRef}
+          onOpenProject={(projectId) => {
+            const project = projects.find((item) => item.id === projectId);
+            if (project) {
+              setActiveMetricId(null);
+              openProjectFile(project, { initialTab: 'overview' });
+            }
+          }}
+        />
+      )}
 
       {projectModalState && (
         <ProjectModal

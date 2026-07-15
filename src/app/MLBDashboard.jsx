@@ -15,6 +15,13 @@ import {
   loadSharedProjects,
   subscribeToSharedProjectChanges,
 } from '../services/sharedProjectStorage';
+import {
+  loadSalesActivity,
+  loadSharedSalesActivity,
+  saveSalesActivity,
+  saveSharedSalesActivity,
+  subscribeToSharedSalesActivity,
+} from '../services/salesActivityStorage';
 
 const serializeProjects = (projects) => JSON.stringify(projects || []);
 
@@ -220,6 +227,46 @@ export default function MLBDashboard() {
       sharedReadyRef.current = false;
       unsubscribe();
       window.clearTimeout(refreshTimerRef.current);
+    };
+  }, [profile?.id]);
+
+  useEffect(() => {
+    if (!profile) return undefined;
+    let disposed = false;
+    let unsubscribe = () => {};
+    let refreshTimer = null;
+
+    const hydrate = async () => {
+      const localRecords = loadSalesActivity();
+      const result = await loadSharedSalesActivity(localRecords);
+      if (disposed) return;
+      if (result.usedRemote) {
+        saveSalesActivity(result.records, { force: true });
+        setInstanceKey((current) => current + 1);
+      } else if (result.available && result.reason === 'REMOTE_SALES_ACTIVITY_EMPTY' && localRecords.length) {
+        await saveSharedSalesActivity(localRecords);
+      }
+    };
+
+    const handleLocalSave = (event) => {
+      saveSharedSalesActivity(event.detail?.records || loadSalesActivity())
+        .catch((error) => setAuthorizationMessage(error.message || 'Unable to sync sales activity.'));
+    };
+    const scheduleHydrate = () => {
+      window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(hydrate, 250);
+    };
+
+    window.addEventListener('mlb-sales-activity-saved', handleLocalSave);
+    hydrate().then(() => {
+      if (!disposed) unsubscribe = subscribeToSharedSalesActivity(scheduleHydrate);
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribe();
+      window.clearTimeout(refreshTimer);
+      window.removeEventListener('mlb-sales-activity-saved', handleLocalSave);
     };
   }, [profile?.id]);
 
