@@ -1,210 +1,20 @@
-# Phase 6 Manual Entry and Critical Path Replacement
+# Phase 6 Normalized Project-File Workflow
 
 ## Purpose
 
-Phase 6 establishes the production-oriented manual workflow that Major League Builders can use before JobNimbus or accounting integrations are complete.
+Phase 6 provides a production-oriented manual workflow for Major League Builders before JobNimbus and accounting integrations are complete.
 
-The implementation is manual-first and integration-ready. It provides a dedicated normalized entry workspace while preserving the existing operator dashboard, Critical Path Book, weekly meeting view, bottleneck views, sales views, and TV Wallboard.
+The normalized backend is retained, but operators do not use a separate Critical Path Entry workspace. The existing project-file experience is the sole visible entry path:
+
+```txt
+New Project -> Open File -> Edit Project -> Save Project File
+```
+
+This avoids duplicate data-entry areas while preserving the production data model, validation, permissions, revision protection, history, and future integration readiness added during Phase 6.
 
 ## Operational outcome
 
-Authorized users can now:
-
-1. Create a sold job with a linked customer and lead record.
-2. Maintain customer contact and location details.
-3. Attribute the job and lead to a salesperson.
-4. Record lead source and campaign information.
-5. Create one or more work-scope Critical Path records.
-6. Maintain measure, ordering, material, scheduling, start, and completion dates.
-7. Assign measurers, crews, vendors, priorities, specifications, and notes.
-8. Record intake and permit progress.
-9. Record original contract, approved changes, final amount, payments, funding, collection, cancellation, and closeout.
-10. Preserve status history and activity attribution.
-11. Refresh the current Book, meeting, operator, and Wallboard views immediately after save.
-
-## Access
-
-Open the account and operational controls in the lower-right corner and choose:
-
-```txt
-Critical Path Entry
-```
-
-Authorized users can also open the workspace with:
-
-```txt
-?manualEntry=1
-```
-
-The workspace is not added as another top-level dashboard view. This preserves the existing operator navigation and prevents the duplicate-view problems experienced in earlier design iterations.
-
-## Workspace layout
-
-### Record list
-
-The left side provides:
-
-- Search by customer, city, region, scope, sold date, or production stage.
-- Existing sold-job selection.
-- Stage and scope-count indicators.
-- Decision-needed visibility.
-- A New Sold Job action for roles with project-creation authority.
-
-### Customer and Sale
-
-The customer and sales section supports:
-
-- Customer or company name.
-- First and last name.
-- Phone, alternate phone, and email.
-- Preferred contact method.
-- Street, city, county, state, and postal code.
-- Customer notes.
-- Date sold.
-- Operating region.
-- Job city or location.
-- Salesperson.
-- Lead source.
-- Campaign.
-- Lead received date.
-- Lead status and notes.
-
-### Production and Scopes
-
-The production section supports:
-
-- Job production stage.
-- Decision needed.
-- Contract received.
-- Documents uploaded.
-- Estimate approved.
-- Budget created.
-- Invoice created.
-- File created.
-- Permit requirement, type, submission, approval, and notes.
-- Job-level production notes.
-
-Each work scope supports:
-
-- Product category.
-- Scope stage.
-- Priority.
-- Description.
-- Measurer.
-- Crew or subcontractor.
-- Vendor.
-- Measure requested.
-- Measured.
-- Material list received.
-- Materials ordered.
-- Material ETA.
-- Materials received.
-- Scheduled install.
-- Started.
-- Completed.
-- Work-order specifications.
-- Scope notes.
-
-Existing scopes are archived instead of deleted. Archived scopes remain available for normalized history and audit use but are excluded from active Book and Wallboard projections.
-
-### Financials and Closeout
-
-The financial section supports:
-
-- Original contract amount.
-- Approved change-order total.
-- Revised contract amount.
-- Final amount override.
-- Deposit amount.
-- Amount paid.
-- Balance due.
-- Payment type.
-- Financing provider.
-- Payment status.
-- Funded, collected, and closed dates.
-- Thank-you status.
-- Cancellation date and reason.
-
-Change orders support:
-
-- Requested and approved dates.
-- Draft, pending, approved, rejected, and void states.
-- Amount.
-- Description and reason.
-- Related work scope.
-- Customer approval.
-
-Change orders are voided rather than deleted so the financial history remains explainable.
-
-## Validation
-
-The browser validation blocks save when:
-
-- Customer or company name is missing.
-- Date sold is missing.
-- Region is invalid.
-- Original amount is negative.
-- No active work scope remains.
-- A scope lacks a category.
-- Critical Path dates are chronologically impossible.
-- A change order lacks a description.
-- Permit approval precedes submission.
-- A cancelled job lacks a cancellation date or reason.
-- The user lacks project-creation authority for a new sold job.
-
-Warnings are shown when:
-
-- Customer contact information is incomplete.
-- Salesperson is unassigned.
-- Lead source is blank.
-- Permit type is missing for a required permit.
-- An approved change order lacks an approval date.
-- Amount paid exceeds the effective final amount.
-
-The database adds future-write constraints for nonnegative job amounts, complete cancellation details, and active scope categories.
-
-## Permission behavior
-
-### Owner, Business Administrator, and Operations Administrator
-
-These roles can create complete sold-job records and maintain sales, production, and financial sections.
-
-### Sales Manager
-
-Can maintain customer, lead, salesperson, region, sold-date, and sales-attribution information. Production and financial sections are read-only.
-
-### Production Manager
-
-Can maintain job stages, intake, permits, decisions, production notes, work scopes, assignments, specifications, and Critical Path dates. Sales and financial sections are read-only.
-
-### Salesperson, Viewer, Wallboard, and Developer Support
-
-These roles do not receive Phase 6 edit access in the current interface.
-
-The service rechecks permissions during save. Disabled fields alone are not treated as a security boundary.
-
-## Concurrency protection
-
-Every normalized record has a revision number. Before updating a job, customer, lead, scope, or change order, Phase 6 compares the form revision with the latest repository revision.
-
-When another user has changed the record after the form opened, save is rejected and the user is instructed to refresh. This prevents silent overwriting of another user's work.
-
-## Activity and status history
-
-Phase 6 creates:
-
-- Job status events when the production stage changes.
-- Payment status events when payment state changes.
-- Scope status events when a scope stage changes.
-- Activity logs for new and updated Critical Path records.
-- Before and after record summaries.
-- Actor user IDs and timestamps.
-
-Status and activity collections are append-only. Existing history rows are not updated during later saves.
-
-## Normalized and legacy compatibility
-
-The Phase 6 workspace writes the Phase 3 normalized dataset:
+Authorized users create and maintain customer work through the existing project modal. A successful project-file save automatically reconciles the nested compatibility record into normalized collections:
 
 ```txt
 customers
@@ -212,87 +22,157 @@ leads
 jobs
 workScopes
 changeOrders
+teamMembers
+crews
 statusEvents
 activityLogs
 ```
 
-After a successful save, the normalized dataset is projected into the stabilized nested project format used by:
+The normalized dataset remains authoritative. After a normalized save, the application projects the backend records back into the nested format consumed by the existing Customer, Book, Meeting, Bottleneck, Sales, and Wallboard views.
 
-- Operator view.
-- Customer production view.
-- Critical Path Book.
-- Weekly Critical Path meeting.
-- Bottleneck views.
-- Sales summaries.
-- TV Wallboard.
+## Visible workflow
 
-This bridge allows MLB to use the new authoritative entry path without waiting for a complete replacement of every existing view.
+### New Project
 
-## Local development behavior
+The existing New Project button creates the initial project file. The user can enter:
 
-When the local normalized dataset is empty, the local repository performs a one-time conversion of the existing legacy project cache. This makes current demo or local test records immediately available in Critical Path Entry.
+- Customer name, city, region, and phone.
+- Date sold, salesperson, lead source, and payment type.
+- Contract amount and deposit.
+- Intake checklist and permits.
+- General notes and decisions needed.
+- One or more work scopes.
+- Change orders and closeout information.
 
-Subsequent Phase 6 saves update both:
+Saving creates the linked normalized customer, lead, job, scope, crew, and change-order records needed by the backend.
 
-- The normalized local production dataset.
-- The nested compatibility cache used by the existing dashboard.
+### Open File and Edit Project
 
-## Database additions
+Clicking a customer, project, Book row, or work scope opens the same project file. Changes are reconciled into the existing normalized records rather than creating parallel records.
 
-Migration:
+The UI remains familiar to MLB users while the backend maintains stable entity IDs and revision numbers.
 
-```txt
-supabase/migrations/20260715000900_phase6_manual_critical_path.sql
-```
+## Removed interface
 
-Adds:
+The following separate entry mechanisms are intentionally retired:
 
-- Nonnegative job-amount constraint for new and updated records.
-- Complete-cancellation constraint for new and updated records.
-- Active-scope category constraint.
-- `v_manual_entry_readiness`.
-- `get_manual_entry_status()`.
-- Phase 6 application metadata.
+- The Critical Path Entry item in account/tools controls.
+- The full-screen `ManualEntryPanel` interface.
+- The `?manualEntry=1` entry route.
+- The separate New Sold Job action contained inside that workspace.
 
-The readiness view identifies:
+The manual-entry domain and service modules remain in the repository as reusable backend infrastructure and reference logic. They are not mounted as an operator-facing screen.
 
-- Jobs without active scopes.
-- Jobs without assigned salespeople.
-- Missing lead sources.
-- Customers without contact paths.
-- Incomplete cancellation details.
-- Invalid scope date sequences.
+## Save architecture
 
-## Automated validation
+`saveProjects()` remains the immediate compatibility-cache boundary used by the existing dashboard. An authorized user save now emits a project-workflow event containing:
+
+- The newly saved project collection.
+- The previous project collection.
+- The workflow source and timestamp.
+
+`legacyWorkflowSyncService` then:
+
+1. Loads the latest normalized dataset.
+2. Converts the compatibility projects into normalized candidate records.
+3. Identifies only created, changed, removed, or archived projects and scopes.
+4. Preserves stable normalized IDs.
+5. Checks hidden expected revisions when available.
+6. Applies normalized customer, lead, job, scope, financial, permit, and closeout changes.
+7. Archives removed projects and scopes instead of destroying history.
+8. Voids removed change orders.
+9. Appends status events and activity records.
+10. Validates the complete production dataset.
+11. Saves only changed normalized collections.
+12. Rebuilds the compatibility cache and refreshes all existing views.
+
+Internal refreshes and remote hydration use forced saves and do not recursively trigger another normalized sync.
+
+## Hidden compatibility metadata
+
+Normalized records are projected into the project file with private `_production` metadata. This metadata is not shown in the interface and includes:
+
+- Job ID and revision.
+- Customer ID and revision.
+- Lead ID and revision.
+- Scope IDs and revisions.
+- Change-order IDs and revisions.
+
+The existing project editor preserves unknown record properties, so this metadata travels through Open File saves without requiring changes to the large legacy component.
+
+## Revision and conflict protection
+
+When a project file contains expected normalized revisions, the sync service compares them with the latest backend records before saving.
+
+If another user changed the record after the file was opened:
+
+- The normalized save is rejected.
+- The latest backend projection is restored to the compatibility cache.
+- The user receives a visible message instructing them to reopen the file.
+
+The legacy UI does not silently overwrite a newer normalized record.
+
+## Validation and rollback
+
+The backend validates the full normalized dataset before persistence. Invalid changes are rejected and the latest valid normalized projection is restored.
+
+Validation includes the Phase 3 production dataset rules and Phase 6 database constraints, including nonnegative financial values, valid relationships, cancellation details, record statuses, and scope data quality.
+
+## Record lifecycle
+
+The project-file workflow preserves history:
+
+- Removing a project from active use archives the normalized job and scopes.
+- Removing a scope archives the scope.
+- Removing a change order changes its state to void.
+- Existing status and activity records remain append-only.
+- Archived normalized records are excluded from active dashboard projections.
+
+## Permissions
+
+The existing runtime authorization layer evaluates the difference between the previous and new project collections before the compatibility save is accepted.
+
+The normalized sync also requires project-creation or business, sales, production, or financial data-management authority. Read-only and Wallboard users cannot persist changes.
+
+## Initialization
+
+At application startup, the production repository is loaded before normal editing begins.
+
+When the normalized dataset is empty and legacy projects exist, the system performs a one-time conversion and saves the baseline normalized records. The resulting compatibility projection includes the hidden normalized metadata needed by later edits.
+
+When normalized data already exists, it is projected into the existing dashboard interface.
+
+## Automated verification
 
 Run:
 
 ```bash
 npm run phase6:verify
+npm run build
 ```
 
-The command validates:
+The Phase 6 verification checks:
 
-- Required manual-entry fields.
-- Critical Path chronology.
-- Approved change-order calculations.
-- Specification parsing.
+- Manual-entry validation and financial calculations.
+- Critical Path date chronology.
+- Archive exclusion from active projections.
 - Normalized job summaries.
-- Archived-scope exclusion from active legacy projections.
+- Compatibility projection behavior.
+- Hidden job, customer, lead, scope, and change-order IDs and revisions.
+- Thank-you status preservation.
 
-The backend CI workflow runs this command before the application build and Supabase migration tests.
+The backend CI workflow runs the verification command before the application build and Supabase migration tests.
 
 ## Non-goals
 
-Phase 6 does not:
+This consolidation does not:
 
 - Implement JobNimbus synchronization.
 - Implement accounting synchronization.
-- Replace every legacy display component.
+- Replace the existing display components with normalized-native components.
 - Add permanent record deletion.
 - Add salesperson ownership-scoped editing.
 - Enable region-based database row filtering.
-- Finalize bottleneck thresholds or production-capacity formulas.
-- Implement bulk CSV import.
+- Implement bulk historical import.
 
-Those areas remain assigned to later phases.
+Those areas remain assigned to later production phases.
