@@ -13,6 +13,7 @@ The backend provides:
 - Row Level Security.
 - Realtime change notifications.
 - A protected Edge Function for user invitations.
+- Normalized manual Critical Path records.
 - Database backup and restore support.
 
 The React dashboard continues to use local storage as an immediate compatibility cache. Shared synchronization activates only when:
@@ -23,6 +24,8 @@ The React dashboard continues to use local storage as an immediate compatibility
 4. The browser has a valid Supabase session.
 5. The Auth account is linked to an active `user_profiles` record.
 6. The shared database contains jobs, or an authorized administrator explicitly bootstraps it.
+
+Phase 6 writes normalized records first and then refreshes the compatibility cache used by the existing operator, Book, meeting, and Wallboard views.
 
 ## Local development
 
@@ -36,6 +39,7 @@ Start and validate:
 
 ```bash
 npm install
+npm run phase6:verify
 npm run supabase:start
 npm run db:reset
 npm run db:lint
@@ -83,6 +87,7 @@ Migrations are stored in `supabase/migrations/`.
 20260715000600_phase5_profile_function_fix.sql
 20260715000700_phase5_user_profile_rpc_only.sql
 20260715000800_phase5_password_activation_guard.sql
+20260715000900_phase6_manual_critical_path.sql
 ```
 
 The Phase 5 migrations provide:
@@ -99,9 +104,18 @@ The Phase 5 migrations provide:
 - RPC/service-role-only writes to `user_profiles`.
 - Database verification that an invited account has a password before activation.
 
+The Phase 6 migration provides:
+
+- Future-write checks for nonnegative job amounts.
+- Required cancellation date and reason for cancelled jobs.
+- Required categories for active work scopes.
+- `v_manual_entry_readiness`.
+- `get_manual_entry_status()`.
+- Phase 6 application metadata.
+
 Do not create two migration files with the same timestamp/version prefix.
 
-## Authentication
+## Authentication and operational permissions
 
 The database is closed to anonymous operational access.
 
@@ -118,11 +132,20 @@ Phase 5 includes:
 - Wallboard-only accounts.
 - Owner safeguards.
 
+Phase 6 adds section-specific manual-entry behavior:
+
+- Owner, Business Administrator, and Operations Administrator can create complete sold-job records.
+- Sales Manager can maintain customer and sales attribution.
+- Production Manager can maintain scopes and production dates.
+- Read-only roles cannot open the entry workspace.
+- The save service rechecks capabilities and revision numbers.
+
 Current limitations:
 
-- Salesperson ownership-scoped editing is deferred while the UI writes one nested legacy dataset.
+- Salesperson ownership-scoped editing remains deferred.
 - Region assignments are stored and administered, but database-level region row filtering is not yet activated.
-- Optimistic conflict resolution is not yet implemented.
+- Revision conflict checks apply to the Phase 6 workspace; the older nested project modal remains a compatibility path.
+- Multi-collection REST writes are ordered but are not one database transaction.
 
 See:
 
@@ -130,6 +153,19 @@ See:
 - `FIRST_OWNER.md`
 - `../project-docs/phase-5-authentication-and-roles.md`
 - `../project-docs/phase-5-role-matrix.md`
+- `../project-docs/phase-6-manual-entry-critical-path.md`
+- `../project-docs/phase-6-completion-status.md`
+
+## Manual-entry readiness
+
+Authorized users can query:
+
+```sql
+select * from public.v_manual_entry_readiness;
+select public.get_manual_entry_status();
+```
+
+The readiness view identifies jobs without scopes or salesperson attribution, missing lead sources, customers without contact information, incomplete cancellation details, and invalid scope chronology.
 
 ## Edge Function
 
@@ -176,7 +212,7 @@ Use separate projects:
 
 | Environment | Purpose |
 |---|---|
-| Local | Migrations, seed data, authentication tests, and automated validation |
+| Local | Migrations, seed data, authentication tests, manual-entry validation, and automated checks |
 | Development | Shared UAT and role testing |
 | Production | Live MLB operational records |
 
@@ -245,12 +281,13 @@ Backup output is excluded from Git.
 
 1. Dependency installation.
 2. Environment validation.
-3. Production application build.
-4. Local Supabase startup.
-5. Migration and seed reset.
-6. Database lint.
-7. Local owner bootstrap.
-8. Authentication smoke test.
-9. Local Supabase shutdown.
+3. Phase 6 manual-entry domain verification.
+4. Production application build.
+5. Local Supabase startup.
+6. Migration and seed reset.
+7. Database lint.
+8. Local owner bootstrap.
+9. Authentication smoke test.
+10. Local Supabase shutdown.
 
-Successful CI should be confirmed before applying Phase 5 to a shared development project.
+Successful CI should be confirmed before applying Phase 6 to a shared development project.
