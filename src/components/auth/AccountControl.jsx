@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ClipboardList,
   Database,
   KeyRound,
   Loader2,
@@ -12,7 +11,7 @@ import {
 import { ROLE_LABELS } from '../../auth/permissions';
 import { useAuth } from '../../auth/AuthContext';
 
-export default function AccountControl({ onOpenManualEntry, onOpenUsers, onOpenBackend }) {
+export default function AccountControl({ onOpenUsers, onOpenBackend }) {
   const auth = useAuth();
   const [open, setOpen] = useState(false);
   const [displayName, setDisplayName] = useState(auth.profile?.displayName || '');
@@ -23,12 +22,6 @@ export default function AccountControl({ onOpenManualEntry, onOpenUsers, onOpenB
   const profile = auth.profile;
   const capabilities = profile?.capabilities || {};
   const localMode = auth.mode === 'local';
-  const canOpenManualEntry = Boolean(
-    capabilities.createProjects
-    || capabilities.manageSalesData
-    || capabilities.manageProductionData
-    || capabilities.manageFinancialData,
-  );
 
   useEffect(() => setDisplayName(profile?.displayName || ''), [profile?.displayName]);
 
@@ -111,12 +104,6 @@ export default function AccountControl({ onOpenManualEntry, onOpenUsers, onOpenB
               </label>
             )}
 
-            {canOpenManualEntry && (
-              <button type="button" onClick={() => { setOpen(false); onOpenManualEntry(); }} className="flex w-full items-center rounded-lg bg-blue-50 px-3 py-3 text-left text-sm font-black text-blue-900 hover:bg-blue-100">
-                <ClipboardList className="mr-3 text-blue-700" size={19} /> Critical Path Entry
-              </button>
-            )}
-
             {!localMode && capabilities.manageUsers && (
               <button type="button" onClick={() => { setOpen(false); onOpenUsers(); }} className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-bold text-slate-700 hover:bg-slate-50">
                 <UserCog className="mr-3 text-blue-700" size={18} /> Users, roles, and access
@@ -152,7 +139,7 @@ export default function AccountControl({ onOpenManualEntry, onOpenUsers, onOpenB
           setOpen((current) => !current);
         }}
         className="flex items-center rounded-full border border-slate-700 bg-slate-950 px-4 py-3 text-sm font-black text-white shadow-xl hover:bg-slate-800"
-        aria-label="Open account and operational controls"
+        aria-label="Open account and administrative controls"
       >
         <Shield className="mr-2 text-blue-300" size={18} />
         {localMode ? 'Tools' : profile.displayName.split(' ')[0] || 'Account'}
