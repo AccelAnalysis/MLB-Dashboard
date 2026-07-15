@@ -43,13 +43,19 @@ if (signInError || !signInData.session) {
   throw new Error(`Local owner sign-in failed: ${signInError?.message || 'No session returned.'}`);
 }
 
-const { data: context, error: contextError } = await client.rpc('record_app_login');
+const { data: context, error: contextError } = await client.rpc('get_my_access_context');
 if (contextError) throw new Error(`Current-user context failed: ${contextError.message}`);
 if (!context?.id) throw new Error('Current-user context did not return a linked application profile.');
 if (context.status !== 'active') throw new Error(`Expected an active profile, received: ${context.status}`);
 if (context.role !== 'owner') throw new Error(`Expected owner role, received: ${context.role}`);
-if (!context.capabilities?.manageUsers) throw new Error('Owner context does not include manageUsers capability.');
-if (!context.capabilities?.legacyFullWrite) throw new Error('Owner context does not include legacyFullWrite capability.');
+if (!context.permissions?.manageUsers) throw new Error('Owner context does not include manageUsers permission.');
+if (!context.permissions?.manageBusiness) throw new Error('Owner context does not include manageBusiness permission.');
+if (!context.permissions?.manageSales) throw new Error('Owner context does not include manageSales permission.');
+if (!context.permissions?.manageProduction) throw new Error('Owner context does not include manageProduction permission.');
+if (!context.permissions?.manageFinancials) throw new Error('Owner context does not include manageFinancials permission.');
+
+const { error: touchError } = await client.rpc('touch_my_session');
+if (touchError) throw new Error(`Session touch failed: ${touchError.message}`);
 
 const { error: signOutError } = await client.auth.signOut();
 if (signOutError) throw new Error(`Local owner sign-out failed: ${signOutError.message}`);
