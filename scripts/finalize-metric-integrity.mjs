@@ -3,26 +3,19 @@ import fs from 'node:fs';
 const path = 'src/MLBDashboard_field_complete.jsx';
 let source = fs.readFileSync(path, 'utf8');
 
-const oldHeaders = `       'Completion Date',
-       'Collected/Funded',`;
-const newHeaders = `       'Completion Date',
-       'Scope Revenue Allocation',
-       'Amount Paid/Funded',
-       'Collected/Funded Date',
-       'Collected/Funded',`;
-
-if (source.includes(oldHeaders)) {
-  source = source.replace(oldHeaders, newHeaders);
-} else if (!source.includes("       'Scope Revenue Allocation',")) {
-  throw new Error('Unable to locate the Critical Path CSV financial headers.');
+if (!source.includes("'Scope Revenue Allocation',")) {
+  const headerPattern = /^(\s*)'Completion Date',\n\1'Collected\/Funded',/m;
+  const matches = source.match(headerPattern);
+  if (!matches) throw new Error('Unable to locate the adjacent Critical Path CSV financial headers.');
+  const indent = matches[1];
+  source = source.replace(
+    headerPattern,
+    `${indent}'Completion Date',\n${indent}'Scope Revenue Allocation',\n${indent}'Amount Paid/Funded',\n${indent}'Collected/Funded Date',\n${indent}'Collected/Funded',`,
+  );
 }
 
-const rowSequence = `        scope?.completionDate || '',
-        scope?.allocatedAmount ?? '',
-        project.amountCollected ?? '',
-        project.collectedDate || '',
-        project.collected ? 'Yes' : 'No',`;
-if (!source.includes(rowSequence)) {
+const rowPattern = /scope\?\.completionDate \|\| '',\n\s*scope\?\.allocatedAmount \?\? '',\n\s*project\.amountCollected \?\? '',\n\s*project\.collectedDate \|\| '',\n\s*project\.collected \? 'Yes' : 'No',/;
+if (!rowPattern.test(source)) {
   throw new Error('Critical Path CSV rows are missing metric-integrity financial fields.');
 }
 
