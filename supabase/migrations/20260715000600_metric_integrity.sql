@@ -20,7 +20,7 @@ create table if not exists public.sales_activity (
 );
 
 alter table public.work_scopes
-  add column if not exists allocated_amount numeric(14,2) not null default 0 check (allocated_amount >= 0);
+  add column if not exists allocated_amount numeric(14,2) check (allocated_amount >= 0);
 
 create trigger sales_activity_updated_metadata
 before update on public.sales_activity
