@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   validate:
-    if: ${{ !startsWith(github.event.pull_request.head.sha && github.event.pull_request.title || github.event.head_commit.message, 'Apply metric integrity corrections') }}
+    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
     env:
       VITE_DATA_PROVIDER: local
