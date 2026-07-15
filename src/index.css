@@ -19,3 +19,44 @@ body {
 #root {
   min-height: 100vh;
 }
+
+/*
+ * The project-file modal is always presented on light surfaces. Explicitly
+ * declare a light form-control theme so Safari, system dark mode, and inherited
+ * colors cannot produce white or low-contrast text inside editable fields.
+ */
+[data-help-id='modal-project-file'] {
+  color: #0f172a;
+  color-scheme: light;
+}
+
+[data-help-id='modal-project-file'] input:not([type='checkbox']):not([type='radio']),
+[data-help-id='modal-project-file'] select,
+[data-help-id='modal-project-file'] textarea {
+  background-color: #ffffff;
+  color: #0f172a;
+  -webkit-text-fill-color: #0f172a;
+  caret-color: #0f172a;
+  opacity: 1;
+}
+
+[data-help-id='modal-project-file'] input::placeholder,
+[data-help-id='modal-project-file'] textarea::placeholder {
+  color: #64748b;
+  -webkit-text-fill-color: #64748b;
+  opacity: 1;
+}
+
+[data-help-id='modal-project-file'] select option {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
+/* Increase contrast for muted instructional and field-label text in the modal. */
+[data-help-id='modal-project-file'] .text-slate-500 {
+  color: #475569;
+}
+
+[data-help-id='modal-project-file'] .text-slate-400 {
+  color: #64748b;
+}
