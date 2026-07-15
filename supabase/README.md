@@ -1,52 +1,65 @@
 # MLB Dashboard Supabase Backend
 
-This directory contains the Phase 4 shared-backend implementation for the MLB Dashboard.
+This directory contains the shared Supabase/Postgres backend, authentication foundation, local development configuration, migrations, Edge Functions, and operational runbooks for the MLB Dashboard.
 
 ## Architecture
 
-The selected production backend is Supabase/Postgres.
+The backend provides:
 
-It provides:
-
-- A relational Postgres database.
+- Relational Postgres data integrity.
 - Versioned SQL migrations.
 - Local Docker-based development.
-- Authentication integration for Phase 5.
+- Supabase Auth and invite-only account access.
 - Row Level Security.
 - Realtime change notifications.
+- Edge Functions for privileged account invitations.
 - Database backup and restore support.
 
-The current React prototype continues to use local storage as an immediate cache. Shared synchronization activates only when:
+The React dashboard continues to use local storage as an immediate compatibility cache. Shared synchronization activates only when:
 
 1. `VITE_DATA_PROVIDER=supabase`.
-2. The Supabase URL and publishable key are configured.
-3. The browser has an authenticated Supabase session.
-4. That authentication account is linked to an active `user_profiles` record.
-5. The shared database already contains jobs, or an administrator explicitly bootstraps it.
+2. `VITE_AUTH_MODE=supabase`.
+3. The Supabase URL and publishable key are configured.
+4. The browser has a valid Supabase session.
+5. The authentication account is linked to an active `user_profiles` record.
+6. The shared database contains jobs, or an authorized administrator explicitly bootstraps it.
 
 ## Local development
 
 Prerequisites:
 
-- Node.js.
-- npm.
-- A Docker-compatible container runtime.
-- PostgreSQL client tools for manual backups and restores.
+- Node.js and npm.
+- Docker Desktop or another Docker-compatible runtime.
+- PostgreSQL client tools for manual backup and restore.
 
-Install and start:
+Start and validate:
 
 ```bash
 npm install
 npm run supabase:start
 npm run db:reset
 npm run db:lint
-npm run dev
 ```
 
-The local Supabase dashboard is configured at:
+The local Studio URL is configured as:
 
 ```txt
 http://127.0.0.1:54323
+```
+
+Create a local Phase 5 owner:
+
+```bash
+LOCAL_OWNER_EMAIL='owner@example.com' \
+LOCAL_OWNER_PASSWORD='local-password-at-least-12-characters' \
+LOCAL_OWNER_NAME='Local MLB Owner' \
+npm run auth:bootstrap-local
+```
+
+Detailed authentication instructions are in:
+
+```txt
+supabase/AUTHENTICATION.md
 ```
 
 Stop the local stack:
@@ -57,49 +70,99 @@ npm run supabase:stop
 
 ## Database migrations
 
-Migrations are stored in:
-
-```txt
-supabase/migrations/
-```
+Migrations are stored in `supabase/migrations/`.
 
 Current migrations:
 
-- `20260715000100_phase4_initial_schema.sql`
-- `20260715000200_add_job_closeout_flag.sql`
+```txt
+20260715000100_phase4_initial_schema.sql
+20260715000200_add_job_closeout_flag.sql
+20260715000300_bootstrap_first_owner.sql
+20260715000400_phase5_authentication_roles.sql
+20260715000500_phase5_user_lifecycle_guards.sql
+20260715000600_phase5_invitation_metadata.sql
+20260715000700_phase5_privilege_trigger_fix.sql
+20260715000800_phase5_salesperson_record_scope.sql
+```
 
-The initial migration creates:
+Together they create or enforce:
 
-- Customers.
-- Leads.
-- Jobs.
-- Work scopes.
+- Customers, leads, jobs, and work scopes.
 - Change orders.
-- Team members.
-- Crews.
-- User profiles.
-- Status events.
-- Activity logs.
-- Import runs.
-- App settings.
+- Team members and crews.
+- User profiles linked to Supabase Auth.
+- Status events and activity logs.
+- Import runs and app settings.
 - Foreign keys and indexes.
 - Record revision triggers.
 - RLS helper functions and policies.
+- Region and salesperson record scope.
+- Invite, acceptance, login, password-update, and deactivation metadata.
+- Owner-role protections.
+- First-owner bootstrap.
 - Data-health views.
-- Backend-status RPC.
+- Backend and current-user RPCs.
 - Realtime publication entries.
+
+## Authentication
+
+The database is intentionally closed to anonymous operational access.
+
+An authenticated Supabase account must also have an application profile with an approved role and active status.
+
+Phase 5 implements:
+
+- Login and logout.
+- Invitation acceptance.
+- Password recovery and password update.
+- Auth-to-profile linkage.
+- User administration.
+- Role capabilities.
+- Region access.
+- Salesperson assignment scope.
+- Wallboard-only accounts.
+- Final-owner safeguards.
+
+See:
+
+- `AUTHENTICATION.md`
+- `FIRST_OWNER.md`
+- `../project-docs/phase-5-authentication-roles.md`
+- `../project-docs/phase-5-role-permission-matrix.md`
+
+## Edge Functions
+
+The invitation function is located at:
+
+```txt
+supabase/functions/invite-user/index.ts
+```
+
+It uses a verified caller JWT and server-side service role to create an Auth invitation and linked application profile. The service-role key is never sent to the browser.
+
+Local function configuration is declared in `supabase/config.toml`.
+
+Remote deployment:
+
+```bash
+npx supabase link --project-ref <project-ref>
+npx supabase secrets set \
+  AUTH_ALLOWED_ORIGINS='https://approved-dashboard.example' \
+  AUTH_INVITE_REDIRECT_URL='https://approved-dashboard.example'
+npx supabase functions deploy invite-user
+```
 
 ## Seed data
 
-Local development seed data is stored in:
+Local seed data is stored in:
 
 ```txt
 supabase/seed.sql
 ```
 
-The seed uses clearly labeled demo records and invalid example email domains. Do not treat seed data as live MLB records.
+It uses clearly labeled demo records and invalid example email domains. It is not live MLB data.
 
-Resetting the local database reapplies all migrations and seed data:
+Resetting reapplies all migrations and seed data:
 
 ```bash
 npm run db:reset
@@ -107,41 +170,43 @@ npm run db:reset
 
 ## Environment separation
 
-Use separate Supabase projects for development and production.
-
-Recommended environments:
+Use separate Supabase projects for:
 
 | Environment | Purpose |
 |---|---|
-| Local | Developer migrations, seed data, and automated validation |
-| Development | Shared testing and user acceptance |
+| Local | Migrations, seed data, authentication tests, and automated validation |
+| Development | Shared UAT and role testing |
 | Production | Live MLB operational records |
 
-Do not point local development at the production database.
+Never point local development at production.
 
 Browser environment variables:
 
 ```txt
 VITE_DATA_PROVIDER=supabase
+VITE_AUTH_MODE=supabase
 VITE_SUPABASE_URL=...
 VITE_SUPABASE_PUBLISHABLE_KEY=...
+VITE_AUTH_REDIRECT_URL=...
+VITE_AUTH_INVITE_FUNCTION=invite-user
+VITE_AUTH_PASSWORD_MIN_LENGTH=12
 VITE_ENABLE_REALTIME=true
 ```
 
-Server/CLI-only values must never use the `VITE_` prefix:
+Server/CLI-only values must not use the `VITE_` prefix:
 
 ```txt
 SUPABASE_ACCESS_TOKEN
 SUPABASE_DB_PASSWORD
 SUPABASE_SERVICE_ROLE_KEY
 DATABASE_URL
+AUTH_ALLOWED_ORIGINS
+AUTH_INVITE_REDIRECT_URL
 ```
 
 The service-role key must never be placed in a browser environment variable or committed to Git.
 
-## Applying migrations to a remote project
-
-After creating the target Supabase project:
+## Applying migrations remotely
 
 ```bash
 npx supabase login
@@ -149,90 +214,83 @@ npx supabase link --project-ref <project-ref>
 npm run db:push
 ```
 
-Apply migrations to development first. Validate the application and data model before applying the same reviewed migrations to production.
+Apply and test in the development project before production.
 
-## Authentication dependency
+## Initial owner
 
-The database is intentionally not open to anonymous users.
+The first owner must be linked through the protected bootstrap function documented in:
 
-RLS permits operational access only to authenticated accounts linked to active application profiles. Phase 5 will implement:
+```txt
+supabase/FIRST_OWNER.md
+```
 
-- Login and logout.
-- Invitation acceptance.
-- Password reset.
-- Auth-to-profile linkage.
-- User management.
-- More detailed role enforcement.
+After the first owner signs in, later users should be created through the dashboard's **Users, roles, and access** panel.
 
-Until Phase 5 is active, the deployed dashboard remains in local mode unless an authenticated test account and active profile are configured manually.
+## Shared-data bootstrap
 
-## Initial bootstrap
-
-The shared database is never populated automatically from browser local storage.
+The browser never automatically copies local cache data into an empty shared database.
 
 After authentication and profile setup:
 
-1. Open the dashboard with `?backendAdmin=1`.
-2. Confirm the backend is available and authenticated.
-3. Review record counts and data-quality issues.
-4. Choose **Bootstrap Empty Backend**.
-5. Confirm the operation.
+1. Sign in as an authorized administrative profile.
+2. Open the account control.
+3. Choose **Backend administration**.
+4. Confirm backend health and record counts.
+5. Choose **Bootstrap Empty Backend**.
+6. Confirm the operation.
 
-Bootstrap is blocked when shared jobs already exist unless a future controlled migration explicitly allows replacement.
+Bootstrap is blocked when shared jobs already exist.
 
-## Admin review
+## Administration tools
 
-Open the hidden backend administration panel by adding:
+Authorized profiles can open:
 
 ```txt
 ?backendAdmin=1
 ```
 
-The panel supports:
+for backend health, counts, quality issues, bootstrap, and JSON export.
 
-- Backend health review.
-- Authentication-state review.
-- Record counts.
-- Data-quality issue review.
-- Explicit empty-backend bootstrap.
-- Validated production-dataset JSON export.
+Owner and Business Admin profiles can open:
 
-The panel is hidden from normal operator navigation and database RLS remains the security boundary.
+```txt
+?userAdmin=1
+```
+
+for invitations, roles, regions, team links, activation, deactivation, and recovery emails.
+
+Database RLS and triggers remain the security boundary even when direct URLs are used.
 
 ## Backup and restore
 
-Create a custom-format Postgres backup:
+Backup:
 
 ```bash
-DATABASE_URL='...' bash scripts/backup-database.sh
+DATABASE_URL='...' npm run db:backup
 ```
 
-Restore only after confirming the target database:
+Guarded restore:
 
 ```bash
 DATABASE_URL='...' \
 BACKUP_FILE='backups/mlb-dashboard-YYYYMMDDTHHMMSSZ.dump' \
 ALLOW_DATABASE_RESTORE=true \
-bash scripts/restore-database.sh
+npm run db:restore
 ```
 
 Backup output is excluded from Git.
 
 ## CI validation
 
-The backend validation workflow:
+`.github/workflows/backend-ci.yml` performs:
 
-1. Reconciles package-lock metadata.
-2. Runs `npm ci`.
-3. Builds the React application.
-4. Starts local Supabase.
-5. Resets the database.
-6. Applies migrations and seed data.
-7. Lints the database.
-8. Stops Supabase.
+1. Lockfile reconciliation.
+2. `npm ci`.
+3. React production build.
+4. Local Supabase startup.
+5. Database reset.
+6. Migration and seed application.
+7. Database lint.
+8. Supabase shutdown.
 
-Workflow file:
-
-```txt
-.github/workflows/backend-ci.yml
-```
+Before remote activation, confirm both the application build and all Phase 5 migrations pass in CI or locally.
