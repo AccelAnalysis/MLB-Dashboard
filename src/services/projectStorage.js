@@ -1,3 +1,8 @@
+import {
+  isLegacyProjectRecord,
+  normalizeLegacyProjects,
+} from '../domain/legacyProjectAdapter';
+
 export const STORAGE_KEY = 'mlb-dashboard-projects-v1';
 
 const downloadTextFile = (filename, content, type) => {
@@ -12,23 +17,7 @@ const downloadTextFile = (filename, content, type) => {
   URL.revokeObjectURL(url);
 };
 
-const ensureProjectShape = (project) => ({
-  ...project,
-  cancellationDate: project.cancellationDate || '',
-  cancellationReason: project.cancellationReason || '',
-  scopes: Array.isArray(project.scopes)
-    ? project.scopes.map((scope) => ({
-        ...scope,
-        measureRequested: scope.measureRequested || '',
-        specs: scope.specs && typeof scope.specs === 'object' ? scope.specs : {},
-      }))
-    : [],
-});
-
-export const normalizeProjects = (projects) => {
-  if (!Array.isArray(projects)) return [];
-  return projects.map(ensureProjectShape);
-};
+export const normalizeProjects = (projects) => normalizeLegacyProjects(projects);
 
 export const loadProjects = (fallbackProjects = []) => {
   try {
@@ -52,7 +41,11 @@ export const resetProjects = () => {
 
 export const exportProjectsJson = (projects) => {
   const timestamp = new Date().toISOString().slice(0, 10);
-  downloadTextFile(`mlb-dashboard-backup-${timestamp}.json`, JSON.stringify(normalizeProjects(projects), null, 2), 'application/json');
+  downloadTextFile(
+    `mlb-dashboard-backup-${timestamp}.json`,
+    JSON.stringify(normalizeProjects(projects), null, 2),
+    'application/json',
+  );
 };
 
 export const importProjectsJson = async (file) => {
@@ -63,13 +56,12 @@ export const importProjectsJson = async (file) => {
   }
 
   const normalized = normalizeProjects(parsed);
-  const looksValid = normalized.every((project) => project && project.id && Array.isArray(project.scopes));
-  if (!looksValid) {
+  if (!normalized.every(isLegacyProjectRecord)) {
     throw new Error('Backup JSON does not match the expected project structure.');
   }
 
   return normalized;
 };
 
-// TODO: Replace localStorage calls above with Firebase, Supabase, or a custom backend
-// when MLB chooses the shared persistence layer and user access model.
+// TODO: Replace localStorage calls above with the selected shared backend after
+// authentication, roles, audit requirements, and migration ownership are approved.
