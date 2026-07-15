@@ -51,7 +51,15 @@ jobs:
               raise SystemExit('Dashboard generation marker is missing or duplicated')
           before, after = source.split(marker, 1)
           after = after.replace('${', r'\${')
-          path.write_text(before + marker + after)
+          source = before + marker + after
+          csv_start = "replaceOnce(\n  dashboardPath,\n  `       'Completion Date',"
+          verification_marker = '// ---------------------------------------------------------------------------\n// Verification hooks.'
+          if source.count(csv_start) != 1 or source.count(verification_marker) != 1:
+              raise SystemExit('CSV patch boundaries are missing or duplicated')
+          start_index = source.index(csv_start)
+          end_index = source.index(verification_marker, start_index)
+          source = source[:start_index] + source[end_index:]
+          path.write_text(source)
           PY
           set +e
           node scripts/apply-metric-integrity-patch.mjs > /tmp/metric-patch.log 2>&1
