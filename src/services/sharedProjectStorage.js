@@ -25,14 +25,38 @@ const preserveLegacyCompatibilityFields = (dataset, projects) => {
   return dataset;
 };
 
+const getAuthorizedCollections = (capabilities = {}) => {
+  if (capabilities.legacyFullWrite) {
+    return ['teamMembers', 'crews', 'customers', 'leads', 'jobs', 'workScopes', 'changeOrders'];
+  }
+
+  const collections = new Set();
+  if (capabilities.manageSalesData) {
+    collections.add('teamMembers');
+    collections.add('customers');
+    collections.add('leads');
+    collections.add('jobs');
+  }
+  if (capabilities.manageProductionData) {
+    collections.add('teamMembers');
+    collections.add('crews');
+    collections.add('jobs');
+    collections.add('workScopes');
+  }
+  if (capabilities.manageFinancialData) {
+    collections.add('jobs');
+    collections.add('changeOrders');
+  }
+  return [...collections];
+};
+
 const getWriteAuthorization = async () => {
   const context = await getCurrentAuthContext();
+  const collections = getAuthorizedCollections(context?.profile?.capabilities || {});
   return {
     context,
-    allowed: Boolean(
-      context?.accessState === 'active'
-      && context?.profile?.capabilities?.legacyFullWrite,
-    ),
+    collections,
+    allowed: Boolean(context?.accessState === 'active' && collections.length),
   };
 };
 
@@ -101,17 +125,21 @@ export const loadSharedProjects = async (fallbackProjects = []) => {
   }
 };
 
-export const saveSharedProjects = async (projects = []) => {
+export const saveSharedProjects = async (projects = [], options = {}) => {
   if (!isSharedBackendEnabled()) {
     return { saved: false, reason: 'SHARED_BACKEND_DISABLED' };
   }
 
   const authorization = await getWriteAuthorization();
-  if (!authorization.allowed) {
+  const requestedCollections = Array.isArray(options.collections)
+    ? options.collections.filter((collection) => authorization.collections.includes(collection))
+    : authorization.collections;
+
+  if (!authorization.allowed || !requestedCollections.length) {
     return {
       saved: false,
       reason: authorization.context?.accessState === 'active'
-        ? 'ROLE_REQUIRES_READ_ONLY_LEGACY_MODE'
+        ? 'ROLE_HAS_NO_SHARED_WRITE_SCOPE'
         : 'AUTHENTICATION_REQUIRED',
       role: authorization.context?.profile?.role || null,
     };
@@ -131,8 +159,14 @@ export const saveSharedProjects = async (projects = []) => {
 
   try {
     const dataset = preserveLegacyCompatibilityFields(conversion.dataset, normalized);
-    const result = await repository.saveDataset(dataset);
-    return { saved: true, reason: null, result, validation: conversion.validation };
+    const result = await repository.saveDataset(dataset, { collections: requestedCollections });
+    return {
+      saved: true,
+      reason: null,
+      result,
+      collections: requestedCollections,
+      validation: conversion.validation,
+    };
   } catch (error) {
     return {
       saved: false,
@@ -147,10 +181,12 @@ export const saveSharedProjects = async (projects = []) => {
 
 /**
  * Explicitly seeds an empty shared backend from the current legacy project list.
- * The normal loader never performs this write automatically. Authentication and
- * the legacyFullWrite capability are required.
+ * The normal loader never performs this write automatically. Broad business
+ * administration capability is required by the backend administration service.
  */
-export const bootstrapSharedBackend = async (projects = []) => saveSharedProjects(projects);
+export const bootstrapSharedBackend = async (projects = []) => saveSharedProjects(projects, {
+  collections: ['teamMembers', 'crews', 'customers', 'leads', 'jobs', 'workScopes', 'changeOrders'],
+});
 
 export const subscribeToSharedProjectChanges = (onChange) => {
   if (!isSharedBackendEnabled()) return () => {};
