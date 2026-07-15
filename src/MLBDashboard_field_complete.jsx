@@ -2749,7 +2749,7 @@ export default function MLBDashboard() {
           <div>
             <div className="flex items-center gap-2">
               <LayoutDashboard className="text-blue-600" size={26} />
-              <h1 className="text-2xl font-black tracking-tight text-slate-950">Constructions Operations Hub</h1>
+              <h1 className="text-2xl font-black tracking-tight text-slate-950">Construction Co. Operations Hub</h1>
             </div>
           </div>
 
