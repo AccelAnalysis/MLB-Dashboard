@@ -36,8 +36,8 @@ export const loadProjects = (fallbackProjects = []) => {
   }
 };
 
-export const saveProjects = (projects) => {
-  if (!canPersistLegacyProjects()) return false;
+export const saveProjects = (projects, options = {}) => {
+  if (!options.force && !canPersistLegacyProjects()) return false;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeProjects(projects)));
   return true;
 };
@@ -73,6 +73,6 @@ export const importProjectsJson = async (file) => {
 };
 
 // The nested project cache remains a compatibility layer for the large legacy
-// dashboard component. Phase 5 blocks writes for roles that cannot safely
-// persist the complete legacy dataset. The normalized shared repository remains
-// the production source of truth.
+// dashboard component. Phase 5 blocks user-initiated cache writes for roles that
+// cannot safely persist the complete legacy dataset. Authorized remote hydration
+// may use saveProjects(projects, { force: true }) to refresh the read-only cache.
