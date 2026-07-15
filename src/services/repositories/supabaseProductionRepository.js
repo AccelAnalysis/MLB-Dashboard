@@ -5,6 +5,8 @@ import { BackendError, normalizeBackendError } from '../backendErrors';
 import { getSupabaseClient } from '../supabaseClient';
 import { SUPABASE_COLLECTIONS, SUPABASE_SAVE_ORDER } from './supabaseMappers';
 
+const APPEND_ONLY_COLLECTIONS = new Set(['statusEvents', 'activityLogs']);
+
 const ensureNoError = (response, operation) => {
   if (!response?.error) return response?.data;
   throw normalizeBackendError(response.error, {
@@ -135,7 +137,10 @@ export class SupabaseProductionRepository {
 
       const response = await this.client
         .from(definition.table)
-        .upsert(rows, { onConflict: 'id', ignoreDuplicates: false });
+        .upsert(rows, {
+          onConflict: 'id',
+          ignoreDuplicates: APPEND_ONLY_COLLECTIONS.has(collection),
+        });
 
       ensureNoError(response, `save:${definition.table}`);
     }
