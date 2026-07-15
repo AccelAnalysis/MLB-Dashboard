@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  ClipboardList,
   Database,
   KeyRound,
   Loader2,
@@ -11,7 +12,7 @@ import {
 import { ROLE_LABELS } from '../../auth/permissions';
 import { useAuth } from '../../auth/AuthContext';
 
-export default function AccountControl({ onOpenUsers, onOpenBackend }) {
+export default function AccountControl({ onOpenManualEntry, onOpenUsers, onOpenBackend }) {
   const auth = useAuth();
   const [open, setOpen] = useState(false);
   const [displayName, setDisplayName] = useState(auth.profile?.displayName || '');
@@ -21,6 +22,13 @@ export default function AccountControl({ onOpenUsers, onOpenBackend }) {
   const displayMode = new URLSearchParams(window.location.search).get('display') === '1';
   const profile = auth.profile;
   const capabilities = profile?.capabilities || {};
+  const localMode = auth.mode === 'local';
+  const canOpenManualEntry = Boolean(
+    capabilities.createProjects
+    || capabilities.manageSalesData
+    || capabilities.manageProductionData
+    || capabilities.manageFinancialData,
+  );
 
   useEffect(() => setDisplayName(profile?.displayName || ''), [profile?.displayName]);
 
@@ -32,10 +40,10 @@ export default function AccountControl({ onOpenUsers, onOpenBackend }) {
     return () => document.removeEventListener('mousedown', close);
   }, []);
 
-  if (!profile || auth.mode === 'local') return null;
+  if (!profile) return null;
 
   if (displayMode) {
-    if (!capabilities.wallboardOnly) return null;
+    if (!capabilities.wallboardOnly || localMode) return null;
     return (
       <button
         type="button"
@@ -74,33 +82,42 @@ export default function AccountControl({ onOpenUsers, onOpenBackend }) {
       {open && (
         <div className="mb-2 w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
           <div className="border-b border-slate-200 bg-slate-50 p-4">
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-700">Authenticated account</p>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-700">{localMode ? 'Local development account' : 'Authenticated account'}</p>
             <p className="mt-1 text-lg font-black text-slate-950">{profile.displayName}</p>
-            <p className="text-sm text-slate-600">{profile.email}</p>
+            {!localMode && <p className="text-sm text-slate-600">{profile.email}</p>}
             <div className="mt-2 flex flex-wrap gap-2">
               <span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-black uppercase text-slate-700">{ROLE_LABELS[profile.role] || profile.role}</span>
               {capabilities.readOnly && <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black uppercase text-amber-800">Read only</span>}
+              {localMode && <span className="rounded-full bg-blue-100 px-2 py-1 text-[10px] font-black uppercase text-blue-800">Local provider</span>}
             </div>
           </div>
 
-          <div className="space-y-3 p-4">
+          <div className="space-y-2 p-4">
             {(auth.actionError || message) && (
               <div className={`rounded-lg border p-3 text-xs ${auth.actionError ? 'border-red-200 bg-red-50 text-red-800' : 'border-green-200 bg-green-50 text-green-800'}`}>
                 {auth.actionError?.message || message}
               </div>
             )}
 
-            <label className="block text-xs font-black uppercase tracking-wide text-slate-600">
-              Display name
-              <div className="mt-1 flex gap-2">
-                <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium normal-case" />
-                <button type="button" onClick={saveProfile} disabled={auth.working || displayName.trim().length < 2} className="rounded-lg border border-slate-300 bg-white px-3 text-slate-700 hover:bg-slate-50 disabled:opacity-50" aria-label="Save profile name">
-                  {auth.working ? <Loader2 className="animate-spin" size={17} /> : <Save size={17} />}
-                </button>
-              </div>
-            </label>
+            {!localMode && (
+              <label className="block text-xs font-black uppercase tracking-wide text-slate-600">
+                Display name
+                <div className="mt-1 flex gap-2">
+                  <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium normal-case" />
+                  <button type="button" onClick={saveProfile} disabled={auth.working || displayName.trim().length < 2} className="rounded-lg border border-slate-300 bg-white px-3 text-slate-700 hover:bg-slate-50 disabled:opacity-50" aria-label="Save profile name">
+                    {auth.working ? <Loader2 className="animate-spin" size={17} /> : <Save size={17} />}
+                  </button>
+                </div>
+              </label>
+            )}
 
-            {capabilities.manageUsers && (
+            {canOpenManualEntry && (
+              <button type="button" onClick={() => { setOpen(false); onOpenManualEntry(); }} className="flex w-full items-center rounded-lg bg-blue-50 px-3 py-3 text-left text-sm font-black text-blue-900 hover:bg-blue-100">
+                <ClipboardList className="mr-3 text-blue-700" size={19} /> Critical Path Entry
+              </button>
+            )}
+
+            {!localMode && capabilities.manageUsers && (
               <button type="button" onClick={() => { setOpen(false); onOpenUsers(); }} className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-bold text-slate-700 hover:bg-slate-50">
                 <UserCog className="mr-3 text-blue-700" size={18} /> Users, roles, and access
               </button>
@@ -112,13 +129,17 @@ export default function AccountControl({ onOpenUsers, onOpenBackend }) {
               </button>
             )}
 
-            <button type="button" onClick={sendRecovery} disabled={auth.working} className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-              <KeyRound className="mr-3" size={18} /> Send password-recovery email
-            </button>
+            {!localMode && (
+              <>
+                <button type="button" onClick={sendRecovery} disabled={auth.working} className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                  <KeyRound className="mr-3" size={18} /> Send password-recovery email
+                </button>
 
-            <button type="button" onClick={() => auth.logout().catch(() => {})} disabled={auth.working} className="flex w-full items-center rounded-lg border-t border-slate-200 px-3 py-3 text-left text-sm font-black text-red-700 hover:bg-red-50 disabled:opacity-50">
-              <LogOut className="mr-3" size={18} /> Sign out
-            </button>
+                <button type="button" onClick={() => auth.logout().catch(() => {})} disabled={auth.working} className="flex w-full items-center rounded-lg border-t border-slate-200 px-3 py-3 text-left text-sm font-black text-red-700 hover:bg-red-50 disabled:opacity-50">
+                  <LogOut className="mr-3" size={18} /> Sign out
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -131,10 +152,10 @@ export default function AccountControl({ onOpenUsers, onOpenBackend }) {
           setOpen((current) => !current);
         }}
         className="flex items-center rounded-full border border-slate-700 bg-slate-950 px-4 py-3 text-sm font-black text-white shadow-xl hover:bg-slate-800"
-        aria-label="Open account controls"
+        aria-label="Open account and operational controls"
       >
         <Shield className="mr-2 text-blue-300" size={18} />
-        {profile.displayName.split(' ')[0] || 'Account'}
+        {localMode ? 'Tools' : profile.displayName.split(' ')[0] || 'Account'}
       </button>
     </div>
   );
