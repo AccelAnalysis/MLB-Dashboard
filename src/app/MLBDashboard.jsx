@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { AuthProvider, useAuth } from '../auth/AuthContext.jsx';
+import { useAuth } from '../auth/AuthContext.jsx';
+import { CAPABILITY } from '../auth/permissions';
 import BackendAdminPanel from '../components/admin/BackendAdminPanel.jsx';
-import UserAdministrationPanel from '../components/admin/UserAdministrationPanel.jsx';
+import UserAdminPanel from '../components/admin/UserAdminPanel.jsx';
 import AccountControl from '../components/auth/AccountControl.jsx';
-import AuthGate from '../components/auth/AuthGate.jsx';
 import LegacyMLBDashboard from '../MLBDashboard_field_complete.jsx';
 import { loadProjects, saveProjects } from '../services/projectStorage';
 import {
@@ -39,29 +39,32 @@ function ReadOnlyNotice({ profile }) {
 
   return (
     <div className="fixed bottom-4 left-4 z-[65] max-w-sm rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-900 shadow-lg print:hidden">
-      Read-only role: you may review authorized records, but changes made in the legacy dashboard will not be persisted.
+      Read-only role: you may review authorized records, but unauthorized changes are discarded.
     </div>
   );
 }
 
-function DashboardRuntime() {
+/**
+ * Phase 5 production entry point.
+ *
+ * AuthProvider and AuthenticationGate are mounted once in main.jsx. This wrapper
+ * owns account controls, administration panels, authorization rollback, and the
+ * Phase 4 shared-data bridge without adding auth code to the legacy dashboard.
+ */
+export default function MLBDashboard() {
   const auth = useAuth();
-  const capabilities = auth.profile?.capabilities || {};
-  const canLegacyWrite = Boolean(capabilities.legacyFullWrite);
-  const canManageUsers = Boolean(capabilities.manageUsers);
-  const canManageBackend = Boolean(capabilities.backendAdministration);
-
-  // The legacy storage service checks this synchronously before its own effects run.
-  window.__MLB_LEGACY_CAN_WRITE__ = canLegacyWrite;
-  window.__MLB_AUTH_CONTEXT__ = {
-    profile: auth.profile,
-    capabilities,
-    accessState: auth.accessState,
-  };
-
-  if (capabilities.wallboardOnly) prepareWallboardOnlyUrl();
+  const profile = auth.profile;
+  const capabilities = profile?.capabilities || {};
+  const canManageUsers = Boolean(capabilities[CAPABILITY.MANAGE_USERS]);
+  const canManageBackend = Boolean(capabilities[CAPABILITY.MANAGE_BACKEND]);
+  const canWriteSharedData = Boolean(
+    capabilities[CAPABILITY.MANAGE_SALES_DATA]
+    || capabilities[CAPABILITY.MANAGE_PRODUCTION_DATA]
+    || capabilities[CAPABILITY.MANAGE_FINANCIAL_DATA],
+  );
 
   const [instanceKey, setInstanceKey] = useState(0);
+  const [authorizationMessage, setAuthorizationMessage] = useState('');
   const [backendAdminOpen, setBackendAdminOpen] = useState(
     () => canManageBackend && new URLSearchParams(window.location.search).get('backendAdmin') === '1',
   );
@@ -74,24 +77,29 @@ function DashboardRuntime() {
   const saveTimerRef = useRef(null);
   const refreshTimerRef = useRef(null);
 
-  const openBackendAdmin = () => {
-    if (!canManageBackend) return;
-    setBackendAdminOpen(true);
-  };
-
-  const openUserAdmin = () => {
-    if (!canManageUsers) return;
-    setUserAdminOpen(true);
-  };
+  useEffect(() => {
+    if (capabilities[CAPABILITY.WALLBOARD_ONLY]) prepareWallboardOnlyUrl();
+  }, [capabilities]);
 
   useEffect(() => {
-    const handleBackendAdmin = () => openBackendAdmin();
-    const handleUserAdmin = () => openUserAdmin();
+    const handleBackendAdmin = () => {
+      if (canManageBackend) setBackendAdminOpen(true);
+    };
+    const handleUserAdmin = () => {
+      if (canManageUsers) setUserAdminOpen(true);
+    };
+    const handleAuthorizationDenied = (event) => {
+      setAuthorizationMessage(event.detail?.message || 'Your role cannot save that change.');
+      setInstanceKey((current) => current + 1);
+    };
+
     window.addEventListener('mlb-open-backend-admin', handleBackendAdmin);
     window.addEventListener('mlb-open-user-admin', handleUserAdmin);
+    window.addEventListener('mlb-authorization-denied', handleAuthorizationDenied);
     return () => {
       window.removeEventListener('mlb-open-backend-admin', handleBackendAdmin);
       window.removeEventListener('mlb-open-user-admin', handleUserAdmin);
+      window.removeEventListener('mlb-authorization-denied', handleAuthorizationDenied);
     };
   }, [canManageBackend, canManageUsers]);
 
@@ -136,6 +144,10 @@ function DashboardRuntime() {
         const result = await saveSharedProjects(projects);
         emitStatus({ operation: 'save', ...result });
         if (result.saved) lastLocalSnapshotRef.current = snapshot;
+        if (!result.saved && result.error) {
+          setAuthorizationMessage(result.error.message || 'The shared backend rejected the change.');
+          setInstanceKey((current) => current + 1);
+        }
       }, getSharedSyncDebounceMs());
     };
 
@@ -164,7 +176,7 @@ function DashboardRuntime() {
         unsubscribe = subscribeToSharedProjectChanges(scheduleRemoteRefresh);
       }
 
-      if (canLegacyWrite) {
+      if (canWriteSharedData) {
         pollTimer = window.setInterval(() => {
           if (!sharedReadyRef.current || disposedRef.current) return;
 
@@ -187,42 +199,40 @@ function DashboardRuntime() {
       window.clearTimeout(saveTimerRef.current);
       window.clearTimeout(refreshTimerRef.current);
     };
-  }, [canLegacyWrite, auth.profile?.id]);
-
-  const closeBackendAdmin = () => {
-    setBackendAdminOpen(false);
-    removeQueryFlag('backendAdmin');
-  };
-
-  const closeUserAdmin = () => {
-    setUserAdminOpen(false);
-    removeQueryFlag('userAdmin');
-  };
+  }, [canWriteSharedData, profile?.id]);
 
   return (
     <>
-      <LegacyMLBDashboard key={instanceKey} />
-      <ReadOnlyNotice profile={auth.profile} />
-      <AccountControl onOpenUsers={openUserAdmin} onOpenBackend={openBackendAdmin} />
-      <BackendAdminPanel open={backendAdminOpen && canManageBackend} onClose={closeBackendAdmin} />
-      <UserAdministrationPanel open={userAdminOpen && canManageUsers} onClose={closeUserAdmin} />
-    </>
-  );
-}
+      {authorizationMessage && (
+        <div className="fixed left-1/2 top-4 z-[100] w-[min(92vw,760px)] -translate-x-1/2 rounded-xl border border-amber-300 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-950 shadow-2xl" role="alert">
+          <div className="flex items-start justify-between gap-4">
+            <span>{authorizationMessage}</span>
+            <button type="button" onClick={() => setAuthorizationMessage('')} className="text-xs font-black uppercase text-amber-800">Dismiss</button>
+          </div>
+        </div>
+      )}
 
-/**
- * Phase 5 production entry point.
- *
- * Supabase mode verifies both the Auth session and the linked active application
- * profile before mounting the dashboard. Local mode retains a development-owner
- * identity so the stabilized prototype remains usable without remote credentials.
- */
-export default function MLBDashboard() {
-  return (
-    <AuthProvider>
-      <AuthGate>
-        <DashboardRuntime />
-      </AuthGate>
-    </AuthProvider>
+      <LegacyMLBDashboard key={instanceKey} />
+      <ReadOnlyNotice profile={profile} />
+      <AccountControl
+        onOpenUsers={() => canManageUsers && setUserAdminOpen(true)}
+        onOpenBackend={() => canManageBackend && setBackendAdminOpen(true)}
+      />
+      <BackendAdminPanel
+        open={backendAdminOpen && canManageBackend}
+        onClose={() => {
+          setBackendAdminOpen(false);
+          removeQueryFlag('backendAdmin');
+        }}
+      />
+      <UserAdminPanel
+        open={userAdminOpen && canManageUsers}
+        onClose={() => {
+          setUserAdminOpen(false);
+          removeQueryFlag('userAdmin');
+        }}
+        actorProfile={profile}
+      />
+    </>
   );
 }
