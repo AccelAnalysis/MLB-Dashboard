@@ -38,7 +38,6 @@ jobs:
         if: ${{ hashFiles('scripts/apply-metric-integrity-patch.mjs') != '' }}
         run: |
           python3 - <<'PY'
-          import re
           from pathlib import Path
           path = Path('scripts/apply-metric-integrity-patch.mjs')
           source = path.read_text()
@@ -53,10 +52,15 @@ jobs:
           before, after = source.split(marker, 1)
           after = after.replace('${', r'\${')
           source = before + marker + after
-          pattern = r"replaceOnce\(\n  dashboardPath,\n  `\s*'Completion Date',[\s\S]*?(?=// ---------------------------------------------------------------------------\n// Verification hooks\.)"
-          source, count = re.subn(pattern, '', source, count=1)
-          if count != 1:
-              print('CSV export patch block was not found; continuing without modifying it.')
+          csv_header = "'Completion Date',"
+          header_index = source.find(csv_header, source.find(marker))
+          if header_index != -1:
+              block_start = source.rfind('replaceOnce(', 0, header_index)
+              verification_index = source.find('// Verification hooks.', header_index)
+              if block_start == -1 or verification_index == -1:
+                  raise SystemExit('Unable to isolate optional CSV patch block')
+              comment_start = source.rfind('// ---------------------------------------------------------------------------', 0, verification_index)
+              source = source[:block_start] + source[comment_start:]
           path.write_text(source)
           PY
           set +e
