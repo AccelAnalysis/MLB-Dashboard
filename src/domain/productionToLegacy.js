@@ -1,4 +1,4 @@
-import { PAYMENT_STATUS, PRODUCTION_STAGE } from './enums';
+import { PAYMENT_STATUS, PRODUCTION_STAGE, RECORD_STATUS } from './enums';
 import { normalizeLegacyProjects } from './legacyProjectAdapter';
 
 const stripLegacyPrefix = (value, prefix) => {
@@ -19,6 +19,8 @@ const legacyRecordId = (record, prefix, preferredKeys = []) => {
 
   return stripLegacyPrefix(record?.id, prefix) || record?.id || '';
 };
+
+const isActiveRecord = (record) => record?.recordStatus !== RECORD_STATUS.ARCHIVED;
 
 const isCollected = (job) => Boolean(
   job.collectedAt
@@ -56,7 +58,9 @@ const toLegacyScope = (record) => ({
 
 /**
  * Converts the normalized production dataset back into the current nested
- * project records used by the stabilized prototype UI.
+ * project records used by the stabilized prototype UI. Archived normalized
+ * records remain available for audit/history but are excluded from active
+ * operator, Book, meeting, and Wallboard projections.
  */
 export const convertProductionToLegacyProjects = (dataset = {}) => {
   const customers = new Map((dataset.customers || []).map((item) => [item.id, item]));
@@ -64,7 +68,7 @@ export const convertProductionToLegacyProjects = (dataset = {}) => {
   const teamMembers = new Map((dataset.teamMembers || []).map((item) => [item.id, item]));
 
   const scopesByJob = new Map();
-  (dataset.workScopes || []).forEach((scope) => {
+  (dataset.workScopes || []).filter(isActiveRecord).forEach((scope) => {
     const list = scopesByJob.get(scope.jobId) || [];
     list.push(scope);
     scopesByJob.set(scope.jobId, list);
@@ -72,14 +76,14 @@ export const convertProductionToLegacyProjects = (dataset = {}) => {
 
   const changeOrdersByJob = new Map();
   (dataset.changeOrders || [])
-    .filter((record) => !['rejected', 'void'].includes(record.status))
+    .filter((record) => isActiveRecord(record) && !['rejected', 'void'].includes(record.status))
     .forEach((record) => {
       const list = changeOrdersByJob.get(record.jobId) || [];
       list.push(record);
       changeOrdersByJob.set(record.jobId, list);
     });
 
-  const projects = (dataset.jobs || []).map((job) => {
+  const projects = (dataset.jobs || []).filter(isActiveRecord).map((job) => {
     const customer = customers.get(job.customerId) || {};
     const lead = leads.get(job.leadId) || {};
     const salesperson = teamMembers.get(job.salespersonId) || {};
