@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import BackendAdminPanel from '../components/admin/BackendAdminPanel.jsx';
 import LegacyMLBDashboard from '../MLBDashboard_field_complete.jsx';
 import { loadProjects, saveProjects } from '../services/projectStorage';
 import {
@@ -24,15 +25,24 @@ const serializeProjects = (projects) => JSON.stringify(projects || []);
  * 4. Refreshes the cache when realtime database changes arrive.
  *
  * An empty remote database is never populated automatically; bootstrap is an
- * explicit admin operation handled by the backend administration service.
+ * explicit admin operation available at ?backendAdmin=1.
  */
 export default function MLBDashboard() {
   const [instanceKey, setInstanceKey] = useState(0);
+  const [backendAdminOpen, setBackendAdminOpen] = useState(
+    () => new URLSearchParams(window.location.search).get('backendAdmin') === '1',
+  );
   const disposedRef = useRef(false);
   const sharedReadyRef = useRef(false);
   const lastLocalSnapshotRef = useRef('');
   const saveTimerRef = useRef(null);
   const refreshTimerRef = useRef(null);
+
+  useEffect(() => {
+    const openBackendAdmin = () => setBackendAdminOpen(true);
+    window.addEventListener('mlb-open-backend-admin', openBackendAdmin);
+    return () => window.removeEventListener('mlb-open-backend-admin', openBackendAdmin);
+  }, []);
 
   useEffect(() => {
     disposedRef.current = false;
@@ -128,5 +138,18 @@ export default function MLBDashboard() {
     };
   }, []);
 
-  return <LegacyMLBDashboard key={instanceKey} />;
+  const closeBackendAdmin = () => {
+    setBackendAdminOpen(false);
+    const params = new URLSearchParams(window.location.search);
+    params.delete('backendAdmin');
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    window.history.replaceState(null, '', `${window.location.pathname}${suffix}${window.location.hash}`);
+  };
+
+  return (
+    <>
+      <LegacyMLBDashboard key={instanceKey} />
+      <BackendAdminPanel open={backendAdminOpen} onClose={closeBackendAdmin} />
+    </>
+  );
 }
