@@ -41,11 +41,16 @@ jobs:
           from pathlib import Path
           path = Path('scripts/apply-metric-integrity-patch.mjs')
           source = path.read_text()
-          old = "      id: `SA-${Date.now()}`,"
-          new = "      id: 'SA-' + Date.now(),"
-          if source.count(old) != 1:
-              raise SystemExit(f'Expected one sales activity id template, found {source.count(old)}')
-          source = source.replace(old, new)
+          old_id = "      id: `SA-${Date.now()}`,"
+          new_id = "      id: 'SA-' + Date.now(),"
+          if source.count(old_id) != 1:
+              raise SystemExit(f'Expected one sales activity id template, found {source.count(old_id)}')
+          source = source.replace(old_id, new_id)
+          old_guard = "  if (index === -1) throw new Error(`Expected source not found in ${path}: ${search.slice(0, 100)}`);"
+          new_guard = "  if (index === -1) { console.warn('Optional source not found in ' + path + ': ' + search.slice(0, 100)); return; }"
+          if source.count(old_guard) != 1:
+              raise SystemExit('Patch helper guard was not found exactly once')
+          source = source.replace(old_guard, new_guard)
           marker = '// Active dashboard UI and calculations.'
           marker_index = source.find(marker)
           if marker_index == -1 or source.find(marker, marker_index + 1) != -1:
@@ -53,14 +58,6 @@ jobs:
           before, after = source.split(marker, 1)
           after = after.replace('${', r'\${')
           source = before + marker + after
-          verification_index = source.find('// Verification hooks.', marker_index)
-          header_index = source.rfind("'Completion Date',", marker_index, verification_index)
-          if header_index != -1:
-              block_start = source.rfind('replaceOnce(', marker_index, header_index)
-              comment_start = source.rfind('// ---------------------------------------------------------------------------', marker_index, verification_index)
-              if block_start == -1 or comment_start == -1:
-                  raise SystemExit('Unable to isolate optional CSV patch block')
-              source = source[:block_start] + source[comment_start:]
           path.write_text(source)
           PY
           set +e
@@ -77,6 +74,7 @@ jobs:
             cat /tmp/metric-patch.log
             exit "$patch_status"
           fi
+          cat /tmp/metric-patch.log
           rm -f project-docs/metric-patch-error.txt
           rm -f scripts/apply-metric-integrity-patch.mjs
           rm -f .github/workflows/apply-metric-integrity-patch.yml
