@@ -105,14 +105,29 @@ export class SupabaseProductionRepository {
       });
     }
 
+    const requestedCollections = Array.isArray(options.collections)
+      ? new Set(options.collections)
+      : null;
+    const saveOrder = requestedCollections
+      ? SUPABASE_SAVE_ORDER.filter((collection) => requestedCollections.has(collection))
+      : SUPABASE_SAVE_ORDER;
     const counts = {};
 
-    for (const collection of SUPABASE_SAVE_ORDER) {
+    for (const collection of saveOrder) {
       const records = Array.isArray(dataset[collection]) ? dataset[collection] : [];
       counts[collection] = records.length;
       if (!records.length) continue;
 
       const definition = SUPABASE_COLLECTIONS[collection];
+      if (!definition) {
+        throw new BackendError(`Unknown production collection: ${collection}`, {
+          code: 'UNKNOWN_COLLECTION',
+          operation: 'saveDataset',
+          provider: this.provider,
+          recoverable: false,
+        });
+      }
+
       const rows = records.map((record) => definition.toRow({
         ...record,
         syncState: options.syncState || 'synced',
@@ -129,6 +144,7 @@ export class SupabaseProductionRepository {
       provider: this.provider,
       savedAt: new Date().toISOString(),
       counts,
+      collections: saveOrder,
       validation,
       destructiveChangesApplied: false,
     };
