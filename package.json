@@ -13,7 +13,9 @@
     "supabase:status": "supabase status",
     "db:reset": "supabase db reset",
     "db:lint": "supabase db lint",
-    "db:push": "supabase db push"
+    "db:push": "supabase db push",
+    "db:backup": "bash scripts/backup-database.sh",
+    "db:restore": "bash scripts/restore-database.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
