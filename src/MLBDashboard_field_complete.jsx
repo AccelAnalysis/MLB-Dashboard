@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -38,6 +38,10 @@ import HelpCenterDrawer from './help/HelpCenterDrawer';
 import GuidedWalkthrough from './help/GuidedWalkthrough';
 import HelpIcon from './help/HelpIcon';
 import { HELP_STORAGE_KEY, helpById } from './help/helpContent';
+import MetricCard from './components/layout/MetricCard';
+import MetricDrilldownModal from './components/metrics/MetricDrilldownModal';
+import CustomerWorkspace from './components/production/CustomerWorkspace';
+import { createMetricResult, METRIC_IDS } from './metrics/metricRegistry';
 
 const toISODate = (date) => date.toISOString().split('T')[0];
 const todayISO = () => toISODate(new Date());
@@ -640,22 +644,6 @@ const Badge = ({ children, className = '' }) => (
   </span>
 );
 
-const MetricCard = ({ label, value, detail, tone = 'bg-white', helpId, helpIcon, onClick, ariaLabel }) => (
-  <div
-    data-help-id={helpId}
-    role={onClick ? 'button' : undefined}
-    tabIndex={onClick ? 0 : undefined}
-    aria-label={ariaLabel}
-    onClick={onClick}
-    onKeyDown={onClick ? (event) => handleActivationKey(event, onClick) : undefined}
-    className={`${tone} rounded-lg border border-slate-200 p-5 shadow-sm ${onClick ? 'cursor-pointer transition-colors hover:border-blue-300 hover:bg-blue-50/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2' : ''}`}
-  >
-    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-    <h3 className="mt-2 text-3xl font-bold text-slate-950">{value}{helpIcon}</h3>
-    {detail && <p className="mt-1 text-sm text-slate-500">{detail}</p>}
-  </div>
-);
-
 const WhiteboardStatusKey = ({ dark = false, helpId }) => (
   <div data-help-id={helpId} className="flex flex-wrap gap-2 text-xs font-black uppercase tracking-wide">
     {WHITEBOARD_STATUS_KEY.map((item) => (
@@ -1146,6 +1134,7 @@ const ProjectModal = ({
 
 export default function MLBDashboard() {
   const fileInputRef = useRef(null);
+  const metricTriggerRef = useRef(null);
   const [projects, setProjects] = useState(() => loadProjects(initialProjects));
   const [salesActivityRecords, setSalesActivityRecords] = useState(() => loadSalesActivity());
   const [salesActivityDraft, setSalesActivityDraft] = useState(() => ({ activityDate: todayISO(), salesperson: '', region: 'Virginia', leadSource: '', category: 'All', leads: '', opportunities: '' }));
@@ -1225,6 +1214,7 @@ export default function MLBDashboard() {
   });
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [projectModalState, setProjectModalState] = useState(null);
+  const [activeMetricId, setActiveMetricId] = useState(null);
   const [expandedProjects, setExpandedProjects] = useState(() => new Set(['P-1001']));
   const [bookSort, setBookSort] = useState(DEFAULT_BOOK_SORT);
   const [bookColumnFilters, setBookColumnFilters] = useState(DEFAULT_BOOK_COLUMN_FILTERS);
@@ -1458,6 +1448,22 @@ export default function MLBDashboard() {
     () => createCategoryIntegritySummary(categoryFilteredProjects, salesCategoryFilter),
     [categoryFilteredProjects, salesCategoryFilter],
   );
+  const workspaceMetricFilters = useMemo(() => ({
+    period: periodFilter,
+    customStart: customPeriodStart,
+    customEnd: customPeriodEnd,
+    region: regionFilter,
+    productCategory: salesCategoryFilter,
+    salesperson: 'All',
+    leadSource: 'All',
+    paymentType: 'All',
+    status: 'All',
+  }), [periodFilter, customPeriodStart, customPeriodEnd, regionFilter, salesCategoryFilter]);
+  const buildMetric = useCallback((id, filters) => createMetricResult({ id, projects, salesActivity: salesActivityRecords, filters }), [projects, salesActivityRecords]);
+  const openMetricDrilldown = (id, trigger) => {
+    metricTriggerRef.current = trigger || document.activeElement;
+    setActiveMetricId(id);
+  };
 
   const addSalesActivity = () => {
     if (!salesActivityDraft.salesperson.trim() || Number(salesActivityDraft.leads || 0) < 0) return;
@@ -1921,98 +1927,12 @@ export default function MLBDashboard() {
         value={pipelineMetrics.alertCount}
         detail="Production bottlenecks"
         tone={pipelineMetrics.alertCount ? 'bg-red-50' : 'bg-green-50'}
-        ariaLabel="Open Bottlenecks view"
-        onClick={() => {
-          setMainArea(MAIN_AREAS.BOTTLENECKS);
-          setBottleneckMode(BOTTLENECK_MODES.ALL);
-        }}
+        ariaLabel="Open alerts metric drilldown"
+        onClick={(trigger) => openMetricDrilldown(METRIC_IDS.OPEN_BOTTLENECKS, trigger)}
       />
       <MetricCard label="Scheduled Scopes" value={pipelineMetrics.scheduledCount} detail="Not yet completed" />
       <MetricCard label="Avg Sold to Done" value={`${pipelineMetrics.avgSoldToDone || '-'}d`} detail="Completed scopes only" />
-      <MetricCard label="Complete to Payment" value={collectionMetrics.measuredProjects ? `${collectionMetrics.avgCompletionToPayment}d` : '-'} detail={`${collectionMetrics.openProjects} completed awaiting payment`} tone={collectionMetrics.openProjects ? 'bg-amber-50' : 'bg-white'} />
-    </div>
-  );
-
-  const ProjectCenterView = () => (
-    <div className="space-y-4">
-      {filteredProjects.map((project) => {
-        const isExpanded = expandedProjects.has(project.id);
-        const alerts = getProjectAlerts(project);
-
-        return (
-          <div key={project.id} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-all" data-help-id="customer-project-card">
-            <div onClick={() => toggleExpand(project.id)} className="flex cursor-pointer flex-col justify-between gap-4 p-4 transition-colors hover:bg-slate-50 md:flex-row md:items-center">
-              <div className="flex items-center gap-4">
-                <div className={`rounded-lg p-2 ${isExpanded ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
-                  {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                </div>
-                <div>
-                  <h3 className="text-lg font-black text-slate-900">{project.customer}</h3>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-3 text-sm font-medium text-slate-500">
-                    <span className="flex items-center"><MapPin size={14} className="mr-1" /> {project.city}</span>
-                    <span>{project.scopes.length} scopes</span>
-                    <span>{project.salesperson || 'Unassigned'}</span>
-                    {project.cancelled && <Badge className="border-red-200 bg-red-50 text-red-700">Cancelled</Badge>}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-4 md:ml-auto md:justify-end">
-                {alerts.length > 0 && <Badge className="border-amber-200 bg-amber-50 text-amber-700" data-help-id="customer-alert-badge">{alerts.length} attention</Badge>}
-                <div className="text-left sm:text-right" data-help-id="customer-current-total">
-                  <div className="text-xs font-bold uppercase text-slate-400">Current Total</div>
-                  <div className="font-black text-slate-800">{currency(getRevisedAmount(project))}</div>
-                </div>
-                <div className="text-left sm:text-right">
-                  <div className="text-xs font-bold uppercase text-slate-400">Active Since</div>
-                  <div className="font-bold text-slate-700">{formatDate(project.dateSold)}</div>
-                </div>
-                <button type="button" onClick={(event) => { event.stopPropagation(); openProjectFile(project, { initialTab: 'overview' }); }} data-help-id="customer-open-file" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-slate-800">
-                  Open File
-                </button>
-                <Help id="customer-open-file" />
-              </div>
-            </div>
-
-            {isExpanded && (
-              <div className="border-t border-slate-100 bg-slate-50 p-4 md:pl-16">
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  {project.scopes.map((scope) => {
-                    const status = getScopeStatus(scope);
-                    return (
-                      <div
-                        key={scope.id}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`Open ${project.customer} ${scope.type} scope`}
-                        onClick={() => openScopeFile(project, scope)}
-                        onKeyDown={(event) => handleActivationKey(event, () => openScopeFile(project, scope))}
-                        className="cursor-pointer rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                        data-help-id="customer-scope-card"
-                      >
-                        <div className="mb-3 flex items-start justify-between gap-3">
-                          <h4 className="font-bold text-slate-800">{scope.type}</h4>
-                          <Badge className={status.color}>{status.label}</Badge>
-                        </div>
-                        <p className="mb-1 text-xs font-bold uppercase text-slate-500">Next Action</p>
-                        <p className="text-sm font-bold text-blue-700">{calculateNextAction(scope, project)}</p>
-                        <div className="mt-3 flex flex-wrap gap-1">
-                          {getWhiteboardDateBadges(scope).map((badge) => <Badge key={badge.label} className={badge.className}>{badge.label}: {formatDate(badge.value)}</Badge>)}
-                        </div>
-                        <div className="mt-3 flex justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
-                          <span>Sub: {scope.crew || 'TBD'}</span>
-                          <span>ETA: {formatDate(scope.materialETA)}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {project.scopes.length === 0 && <p className="p-2 text-sm italic text-slate-500">No work scopes defined for this project.</p>}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
+      <MetricCard label="Complete to Payment" value={collectionMetrics.measuredProjects ? `${collectionMetrics.avgCompletionToPayment}d` : '-'} detail={`${collectionMetrics.openProjects} completed awaiting payment`} tone={collectionMetrics.openProjects ? 'bg-amber-50' : 'bg-white'} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.COMPLETION_TO_PAYMENT, trigger)} />
     </div>
   );
 
@@ -2110,12 +2030,14 @@ export default function MLBDashboard() {
     </div>
   );
 
+
   const SalesView = () => {
     const totalRevenue = salesStats.reduce((sum, rep) => sum + rep.revenue, 0);
     const totalLeads = salesStats.reduce((sum, rep) => sum + rep.leads, 0);
     const totalProjects = salesStats.reduce((sum, rep) => sum + rep.projects, 0);
     const totalCancelled = salesStats.reduce((sum, rep) => sum + rep.cancelled, 0);
     const unresolvedRevenue = salesStats.reduce((sum, rep) => sum + rep.unallocatedProjects, 0);
+    const drilldownMetric = (id) => buildMetric(id, workspaceMetricFilters);
 
     return (
       <div className="space-y-6">
@@ -2134,21 +2056,23 @@ export default function MLBDashboard() {
           {unresolvedRevenue > 0 && <p className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">{unresolvedRevenue} multi-scope project{unresolvedRevenue === 1 ? '' : 's'} match this category but are excluded from category revenue until scope allocations equal the revised project total.</p>}
         </section>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-7" data-help-id="sales-summary-metrics">
-          <MetricCard label="Sales Revenue" value={currency(totalRevenue)} detail={`${periodLabel} recognized sold value`} helpId="sales-revenue" helpIcon={<Help id="sales-revenue" />} />
-          <MetricCard label="Projects Sold" value={totalProjects} detail="Sold-date period" helpId="sales-projects-sold" helpIcon={<Help id="sales-projects-sold" />} />
-          <MetricCard label="Leads Given" value={totalLeads} detail="Saved lead activity" helpId="sales-leads-given" helpIcon={<Help id="sales-leads-given" />} />
-          <MetricCard label="Close Rate" value={totalLeads ? `${Math.round((totalProjects / totalLeads) * 100)}%` : '-'} detail="Projects divided by leads" helpId="sales-close-rate" helpIcon={<Help id="sales-close-rate" />} />
-          <MetricCard label="Cancel Rate" value={totalProjects + totalCancelled ? `${Math.round((totalCancelled / (totalProjects + totalCancelled)) * 100)}%` : '-'} detail={`${totalCancelled} cancelled`} tone={totalCancelled ? 'bg-red-50' : 'bg-white'} helpId="sales-cancel-rate" helpIcon={<Help id="sales-cancel-rate" />} />
-          <MetricCard label="Production Completed" value={currency(salesVsProduction.completedValue)} detail={`${salesVsProduction.completedProjects} completion-date projects`} />
-          <MetricCard label="Complete to Payment" value={collectionMetrics.measuredProjects ? `${collectionMetrics.avgCompletionToPayment}d` : '-'} detail={`${collectionMetrics.openProjects} awaiting payment`} tone={collectionMetrics.openProjects ? 'bg-amber-50' : 'bg-white'} />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-9" data-help-id="sales-summary-metrics">
+          <MetricCard metric={drilldownMetric(METRIC_IDS.SALES_REVENUE)} detail={`${periodLabel} recognized sold value`} helpId="sales-revenue" helpIcon={<Help id="sales-revenue" />} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.SALES_REVENUE, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.PROJECTS_SOLD)} detail="Sold-date period" helpId="sales-projects-sold" helpIcon={<Help id="sales-projects-sold" />} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.PROJECTS_SOLD, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.LEADS_GIVEN)} detail="Saved lead activity" helpId="sales-leads-given" helpIcon={<Help id="sales-leads-given" />} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.LEADS_GIVEN, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.CLOSE_RATE)} detail="Projects divided by leads" helpId="sales-close-rate" helpIcon={<Help id="sales-close-rate" />} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.CLOSE_RATE, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.CANCEL_RATE)} detail={`${totalCancelled} cancelled`} tone={totalCancelled ? 'bg-red-50' : 'bg-white'} helpId="sales-cancel-rate" helpIcon={<Help id="sales-cancel-rate" />} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.CANCEL_RATE, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.AVERAGE_CONTRACT)} detail="Recognized revenue per sold project" onClick={(trigger) => openMetricDrilldown(METRIC_IDS.AVERAGE_CONTRACT, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.VALUE_PER_LEAD)} detail="Recognized revenue per saved lead" onClick={(trigger) => openMetricDrilldown(METRIC_IDS.VALUE_PER_LEAD, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.COMPLETED_VALUE)} label="Production Completed" detail={`${salesVsProduction.completedProjects} completion-date projects`} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.COMPLETED_VALUE, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.COMPLETION_TO_PAYMENT)} detail={`${collectionMetrics.openProjects} awaiting payment`} tone={collectionMetrics.openProjects ? 'bg-amber-50' : 'bg-white'} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.COMPLETION_TO_PAYMENT, trigger)} />
         </div>
 
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-          <MetricCard label="Booked in Period" value={currency(salesVsProduction.soldValue)} detail={`${salesVsProduction.soldProjects} sold projects`} />
-          <MetricCard label="Completed in Period" value={currency(salesVsProduction.completedValue)} detail={`${salesVsProduction.completedProjects} completed projects`} />
-          <MetricCard label="Production / Sales" value={salesVsProduction.soldValue ? `${Math.round(salesVsProduction.productionToSalesRatio * 100)}%` : '-'} detail="Completed value divided by booked value" tone={salesVsProduction.productionToSalesRatio < 0.8 && salesVsProduction.soldValue ? 'bg-amber-50' : 'bg-white'} />
-          <MetricCard label="Backlog Movement" value={currency(salesVsProduction.backlogMovement)} detail={salesVsProduction.backlogMovement >= 0 ? 'Sales added more than production completed' : 'Production reduced backlog'} tone={salesVsProduction.backlogMovement > 0 ? 'bg-amber-50' : 'bg-green-50'} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.BOOKED_VALUE)} detail={`${salesVsProduction.soldProjects} sold projects`} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.BOOKED_VALUE, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.COMPLETED_VALUE)} detail={`${salesVsProduction.completedProjects} completed projects`} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.COMPLETED_VALUE, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.PRODUCTION_TO_SALES)} detail="Completed value divided by booked value" tone={salesVsProduction.productionToSalesRatio < 0.8 && salesVsProduction.soldValue ? 'bg-amber-50' : 'bg-white'} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.PRODUCTION_TO_SALES, trigger)} />
+          <MetricCard metric={drilldownMetric(METRIC_IDS.BACKLOG_MOVEMENT)} detail={salesVsProduction.backlogMovement >= 0 ? 'Sales added more than production completed' : 'Production reduced backlog'} tone={salesVsProduction.backlogMovement > 0 ? 'bg-amber-50' : 'bg-green-50'} onClick={(trigger) => openMetricDrilldown(METRIC_IDS.BACKLOG_MOVEMENT, trigger)} />
         </section>
 
         <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -2959,7 +2883,19 @@ export default function MLBDashboard() {
 
       <main className={`${currentView === VIEWS.WALLBOARD ? 'mx-auto max-w-[1920px] px-3 py-3' : 'mx-auto w-full max-w-[1920px] space-y-6 px-4 py-6'}`}>
         {currentView !== VIEWS.CRITICAL && currentView !== VIEWS.WALLBOARD && currentView !== VIEWS.BOOK && <ExecutiveSummary />}
-        {currentView === VIEWS.CENTER && <ProjectCenterView />}
+        {currentView === VIEWS.CENTER && (
+          <CustomerWorkspace
+            projects={filteredProjects}
+            expandedProjects={expandedProjects}
+            toggleExpand={toggleExpand}
+            openProjectFile={openProjectFile}
+            openScopeFile={openScopeFile}
+            onNewProject={() => openProjectFile(emptyProject(), { initialTab: 'overview' })}
+            formatDate={formatDate}
+            currency={currency}
+            getWhiteboardDateBadges={getWhiteboardDateBadges}
+          />
+        )}
         {currentView === VIEWS.MEASURE && <MeasurementQueueView />}
         {currentView === VIEWS.BOTTLENECKS && <BottlenecksView />}
         {currentView === VIEWS.SALES && <SalesView />}
@@ -2967,6 +2903,23 @@ export default function MLBDashboard() {
         {currentView === VIEWS.BOOK && <CriticalPathBookView />}
         {currentView === VIEWS.WALLBOARD && <TVWallboardView />}
       </main>
+
+      {activeMetricId && (
+        <MetricDrilldownModal
+          metricId={activeMetricId}
+          workspaceFilters={workspaceMetricFilters}
+          buildMetric={buildMetric}
+          onClose={() => setActiveMetricId(null)}
+          returnFocusRef={metricTriggerRef}
+          onOpenProject={(projectId) => {
+            const project = projects.find((item) => item.id === projectId);
+            if (project) {
+              setActiveMetricId(null);
+              openProjectFile(project, { initialTab: 'overview' });
+            }
+          }}
+        />
+      )}
 
       {projectModalState && (
         <ProjectModal
