@@ -32,7 +32,22 @@ export default function AccountControl({ onOpenUsers, onOpenBackend }) {
     return () => document.removeEventListener('mousedown', close);
   }, []);
 
-  if (!profile || auth.mode === 'local' || displayMode) return null;
+  if (!profile || auth.mode === 'local') return null;
+
+  if (displayMode) {
+    if (!capabilities.wallboardOnly) return null;
+    return (
+      <button
+        type="button"
+        onClick={() => auth.logout().catch(() => {})}
+        disabled={auth.working}
+        className="fixed bottom-2 right-2 z-[75] flex items-center rounded-lg border border-white/20 bg-slate-950/40 px-2.5 py-2 text-[10px] font-black uppercase tracking-wide text-white/60 opacity-30 transition hover:bg-slate-950 hover:text-white hover:opacity-100 disabled:opacity-20 print:hidden"
+        aria-label="Sign out of Wallboard account"
+      >
+        <LogOut className="mr-1.5" size={13} /> Sign out
+      </button>
+    );
+  }
 
   const saveProfile = async () => {
     setMessage('');
